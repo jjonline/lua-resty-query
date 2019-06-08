@@ -59,7 +59,7 @@ local operator = {
 }
 
 -- 获取内部保存的where整个数组
-where_class.getOptions = function()
+where_class.getOptions = function(self)
     return options
 end
 

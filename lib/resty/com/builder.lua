@@ -266,10 +266,10 @@ end
 -- @param string|array condition 操作条件
 builder.where = function(self, column, operate, condition)
     -- 传递给内部where对象处理
-    where_object.where(where_object, column, operate, condition)
+    where_object:where(column, operate, condition)
 
     -- 从where对象获取到处理好的内部options
-    options.where = where_object.getOptions()
+    options.where = where_object:getOptions()
 
     return self
 end
@@ -280,10 +280,10 @@ end
 -- @param string|array condition 操作条件
 builder.whereOr = function(self, column, operate, condition)
     -- 传递给内部where对象处理
-    where_object.whereOr(where_object, column, operate, condition)
+    where_object:whereOr(column, operate, condition)
 
     -- 从where对象获取到处理好的内部options
-    options.where = where_object.getOptions()
+    options.where = where_object:getOptions()
 
     return self
 end
