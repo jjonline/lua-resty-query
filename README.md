@@ -1,118 +1,165 @@
 # lua-resty-db
 
-基于[openresty/lua-resty-mysql](https://github.com/openresty/lua-resty-mysql)库的openresty下lua相关no block操作mysql的封装，支持简单的链式调用。
+[TOC]
 
-## 快速上手
+# table 方法
 
-* 查询单条数据
+功能：设置需要操作的数据表
+
+用法：
+
+* `table('table_anme')` 不带前缀的无别名形式
+* `table('table_name table_alias_name')` 不带前缀的使用空格标识别名的形式
+* `table('table_name AS table_alias_name')` 不带前缀的使用`as`标识别名的形式
+
+# field 方法
+
+功能：设置查询操作的字段
+
+用法：
+
+* `field('*')` 模糊查询所有字段，尽量避免使用
+* `field('field1')` 无表名称(或表别名)形式
+* `field('field2 AS field3')` 无表名称(或表别名)但有字段名别名的形式
+* `field('table.field4')` 有表名称(或表别名)形式
+* `field('table.field5 AS field6')` 有表名称(或表别名)且有字段别名的形式
+* `field('table.field7 AS field8,field9')` 字符串形式设置多个字段
+* `field({'table.field10 AS field11','field12'})` 数组形式设置多个字段
+
+> 字符串形式使用半角逗号传递多个字段
+
+> 数组形式多个数组元素传递多个字段
+
+> `as`关键字不区分大小写，建议全部大写
+
+# join 方法
+
+功能：设置join关联查询
+
+用法：
+
+* `join('no_prefix_table_name', 'no_prefix_table_name.id=table1.cid')` 两个参数默认`inner`查询
+* `join('no_prefix_table_name as alias_name', 'alias_name.id=table1.cid')` 两个参数join表带自定义别名，as语法
+* `join('no_prefix_table_name', 'no_prefix_table_name.id=table1.cid', 'LEFT')` 三个参数指定join类型
+* `join('no_prefix_table_name as alias_name', 'alias_name.id=? AND table.cid=?', 'inner', {1, 11})` 四个参数join条件里使用参数绑定增强安全性
+
+
+# where 方法
+
+* 方法原型1：`where('可选的表名.字段名','操作符', '查询值')` `AND`类型查询
+* 方法原型2：`whereOr('可选的表名.字段名', '操作符', '查询值')` `OR`类型查询
+
+操作符列表：
+
+| code | 说明 | 示例 |
+| :--: | :-- |:--|
+| = | 等于 |`where('field','=','val')`  简写：`where('field','val')`|
+| <> | 不等于 |`where('field','<>','val')`|
+| > | 大于 |`where('field','>','val')`|
+| >= | 大于等于 |`where('field','>=','val')`|
+| < | 小于 |`where('field','<','val')`|
+| <= | 小于等于 |`where('field','<=','val')`|
+| LIKE | like模糊检索 |`where('field','LIKE','%val%')`|
+| NOT LIKE | like模糊检索取非 |`where('field','NOT LIKE','%val%')`|
+| BETWEEN | between区间查询 |`where('field','BETWEEN','1,10')` 或 `where('field','BETWEEN',{1,10})`|
+| NOT BETWEEN | between区间查询取非 |`where('field','NOT BETWEEN','1,10')` 或 `where('field','NOT BETWEEN',{1,10})`|
+| IN | in查询 |`where('field','IN','1,2,10')` 或 `where('field','IN',{1,2,10})`|
+| NOT IN | in查询取非 |`where('field','NOT IN','1,2,10')` 或 `where('field','NOT IN',{1,2,10})`|
+| NULL | null等价查询 |`where('field','NULL')`，如果需要查询等于字符串null的，写法：`where('field','=','NULL')`|
+| NOT NULL | null等价查询取非 |`where('field','NOT NULL')`|
+| EXP | 表达式查询 |`where('field','EXP', 'IN (1,2)')`|
+
+> 操作符不区分大小写，建议统一使用大写！
+
+快捷用法：
+
+* `whereNull('field')` 快捷`null`查询
+* `whereNotNull('field')` 快捷`not null`查询
+* `whereIn('table.field','1,2,10')` 快捷`in`查询
+* `whereNotIn('table.field',{1,2,10})` 快捷`not in`查询
+* `whereBetween('table.field',{1,10})` 快捷`between`查询
+* `whereNotBetween('table.field',{1,10})` 快捷`not between`查询
+* `whereLike('table.field','%晶晶')` 快捷`like`查询
+* `whereNotLike('table.field','%晶晶%')` 快捷`not like`查询
+* `whereExp('table.field','IN (1,2)')` 快捷`EXP`查询
+
+函数回调参数形式
+
+* `where(callback)` 其中`callback`是一个函数，参数为一个`where`对象
+
 ````
-local query = require "resty/db/query"
-
-local db = query("user")
-
--- 用法1
-local user = db:table("user"):where("id", 1):find()
-
--- 用法2
-local user = db:table("user"):where({"id" = 1}):find()
-
--- user结果集示例：
--- {
---    "id"     = 1,
---    "type"   = 1,
---    "name"   = "jjonline",
---    "gender" = 1,
---    "email"  = "jjonline@jjonline.cn"
--- }
-
+where(function (query) 
+    query:where('id','=',1):whereOr('cid',2)
+end):where(function(query)
+    query:where('id','=',3):whereOr('name','LIKE','%晶晶%')
+end)
 ````
+构造的sql为：`(id=1 OR cid=2) AND (id= 3 OR name LIKE '%晶晶%')`
 
-* 查询多条数据
+# order 方法
 
-````
-local query = require "resty/db/query"
+功能：设置order排序条件
 
-local db = query("user")
+用法：
 
--- 用法1
-local users = db:table("user"):where("type", 1):select()
+* `order('id')` 或 `order('id', 'ASC')` 按id升序排列
+* `order('id', 'DESC')` 按id降序排列
+* `order({'id' = 'DESC'})` 按id降序排列，数组形式参数
+* `order({'id' = 'DESC', 'cid' = 'ASC'})` 按id降序同时按cid升序排列，数组形式参数
 
--- 用法2
-local users = db:table("user"):where({"type" = 1}):select()
+# limit 方法
 
--- users结果集示例：
--- {
---    {
---      "id"     = 1,
---      "type"   = 1,
---      "name"   = "jjonline",
---      "gender" = 1,
---      "email"  = "jjonline@jjonline.cn"
---    },
---    {
---      "id"     = 2,
---      "type"   = 1,
---      "name"   = "yang",
---      "gender" = 1,
---      "email"  = "jjonline@qq.com"
---    },   
--- }
+功能：设置limit分页
 
-````
+方法原型：`limit(offset,length)` 第一个参数为偏移量，第二个参数为数据条数长度
 
-## 方法列表
+用法：
 
-* query
-    * [config](#config)
-    * [connect](#connect)
-    * [close](#close)
-    * [new](#new)
-    * [connection](#connection)
-    * [buildSQL](#buildSQL)
-    * [table](#table)
-    * [alias](#alias)
-    * [field](#field)
-    * [innerJoin](#innerJoin)
-    * [lefJoin](#lefJoin)
-    * [rightJoin](#rightJoin)
-    * [fullJoin](#fullJoin)
-    * [where](#where)
-    * [order](#order)
-    * [limit](#limit)
-    * [insert](#insert)
-    * [insertGetId](#insertGetId)
-    * [find](#find)
-    * [select](#select)
-    * [page](#page)
-    * [update](#update)
-    * [delete](#delete)
-    * [query](#query)
-    * [startTrans](#startTrans)
-    * [commit](#commit)
-    * [rollback](#rollback)
-    * [transaction](#transaction)
-* env
-* utils
+* `limit(10)` 单个参数形式，限制查询指定参数指定数目的数据
+* `limit(1,10)` int数字型参数，从偏移量开始查询
+* `limit('1','10')` 支持字符串形式的整数
 
-config
----
+# group 方法
 
-connect
----
+功能：设置group分组
 
-close
----
+注意：新版MySQL对于group的字段可能因模式的不同而要求不同，譬如严格模式下，group子句必须出现select中的所有字段
 
-new
----
+用法：
 
-new
----
+* `group('field1')` 单个字段分组
+* `group('field1,field2')` 多个字段分组
+* `group('sum(field3)')` 支持聚合函数
 
-## 鸣谢并使用的依赖包
 
-> 以下依赖包直接归并到了本git库，无需额外引入直接使用
+# having 方法
 
-| 包名称 | 版本 | 协议 |说明 |
-| :----: | :----: | :----: |:----: |
-| lua-resty-ini | master | BSD | [Github](https://github.com/doujiang24/lua-resty-ini) |
+功能：设置group分组的筛选条件
+
+注意：配合group方法使用
+
+用法：
+
+* `group('field1 > 10')` 
+
+# distinct 方法
+
+功能：唯一值设置
+
+注意：distinct用法一般用于查询不重复的某一列，多列则是多列组合的唯一，某些场景下可group代替
+
+用法：
+
+* `distinct(true)` 参数为true等价值则distinct，false等价值则不distinct
+
+
+# lock 方法
+
+功能：设置锁机制
+
+方法原型：`limit(offset,length)` 第一个参数为偏移量，第二个参数为数据条数长度
+
+用法：
+
+* `lock(true)` 加入`FOR UPDATE`锁
+* `lock('lock in share mode')` 字符串用于一些特殊的锁定要求
