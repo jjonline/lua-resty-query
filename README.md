@@ -1,5 +1,3 @@
-# lua-resty-db
-
 [TOC]
 
 # table 方法
@@ -156,8 +154,6 @@ end)
 # lock 方法
 
 功能：设置锁机制
-
-方法原型：`limit(offset,length)` 第一个参数为偏移量，第二个参数为数据条数长度
 
 用法：
 
