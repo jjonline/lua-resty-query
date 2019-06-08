@@ -88,7 +88,18 @@ local where_object = where_class()
     options.distinct = false;
 ]]--
 local options = {
-    prefix = '',
+    config  = {
+        host      = "127.0.0.1",
+        port      = 3306,
+        database  = "",
+        username  = "",
+        password  = "",
+        charset   = 'utf8mb4',
+        collation = 'utf8mb4_general_ci',
+        prefix    = "",
+        strict    = true,
+        engine    = nil,
+    },
     table  = nil,
     field  = {},
     where  = {
@@ -104,11 +115,6 @@ local options = {
     lock      = '',
 }
 
--- 数据库配置
-local config  = {
-    prefix = '' -- 表名称前缀
-}
-
 -- 构造器内部分析处理表名称的方法
 -- @param string table_name 参数形式：no_prefix_table|no_prefix_table as table_alias
 -- @return string `with_prefix_table`|`with_prefix_table` AS `table_alias`
@@ -119,7 +125,7 @@ local parseJoinTable = function(table_name)
     -- 使用了as语法显式设置别名
     if #_table_array == 3 then
         return {
-            config.prefix .. _table_array[1],
+            options.config.prefix .. _table_array[1],
             _table_array[3]
         }
     end
@@ -127,7 +133,7 @@ local parseJoinTable = function(table_name)
     -- 使用了空格显式设置别名
     if #_table_array == 2 then
         return {
-            config.prefix .. _table_array[1],
+            options.config.prefix .. _table_array[1],
             _table_array[2]
         }
     end
@@ -135,7 +141,7 @@ local parseJoinTable = function(table_name)
     -- 未显式设置别名，使用无前缀的表名作为别名
     if #_table_array == 1 then
         return {
-            config.prefix .. _table_array[1],
+            options.config.prefix .. _table_array[1],
             _table_array[1]
         }
     end
@@ -148,23 +154,38 @@ end
 -- 参数配置设置方式【必须是第一个被调用的方法】
 -- @param array _config Db数据库连接配置参数数组
 builder.setConfig = function(self, _config)
-    -- 配置参数内部数组
-    config = _config
-    -- 设置内部表名称前缀
-    if utils.empty(config.prefix) then
-        options.prefix = ''
-    else
-        options.prefix = config.prefix
+    -- 尝试合并数组
+    _config = utils.array_merge(options.config, _config)
+
+    -- 合并后结果正常则赋值
+    if not utils.empty(_config) then
+        options.config = _config
     end
+
     return self
+end
+
+-- 获取配置
+-- @param string key 可选的按指定配置项返回
+-- @return mixed
+builder.getConfig = function(self, key)
+    if options.config[key] then
+        return options.config[key]
+    end
+
+    -- 返回数组
+    return options.config
 end
 
 --- 获取builder内部构造器选项项目table
 --- @param string option 可选的内部构造器选项名称
+--- @return mixed
 builder.getOptions = function(option)
     if options[option] then
         return options[option]
     end
+
+    -- 返回数组
     return options
 end
 
@@ -178,7 +199,7 @@ builder.table = function(self, table)
     end
 
     -- 拼接成完整表名称后反引号包裹
-    options.table = utils.set_back_quote(options.prefix .. utils.strip_back_quote(table))
+    options.table = utils.set_back_quote(options.config.prefix .. utils.strip_back_quote(table))
     return self
 end
 

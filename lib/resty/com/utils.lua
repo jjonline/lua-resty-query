@@ -86,7 +86,7 @@ end
 local function empty(value)
     if value == nil or value == '' or value == false then
         return true
-    elseif type(value) == 'table' then
+    elseif "table" == type(value) then
         return next(value) == nil
     else
         return false
@@ -188,7 +188,7 @@ end
 local function deep_copy(orig)
     local orig_type = type(orig)
     local copy
-    if orig_type == 'table' then
+    if "table" == orig_type then
         copy = {}
         for orig_key, orig_value in next, orig, nil do
             copy[deep_copy(orig_key)] = deep_copy(orig_value)
@@ -198,6 +198,26 @@ local function deep_copy(orig)
         copy = orig
     end
     return copy
+end
+
+-- 合并两个数组
+-- @param array   arr1 原始数组
+-- @param array   arr2 新变量类型数组
+-- @return array|false
+local function array_merge(arr1, arr2)
+    if "table" ~= type(arr1) or "table" ~= type(arr2) then
+        logger("array_merge param must be table or array")
+        return false
+    end
+
+    -- 遍历覆盖
+    for k, v in pairs(arr2) do
+        if v then
+            arr1[k] = v
+        end
+    end
+
+    return arr1
 end
 
 -- 检查1个table是否为数组，即数字索引的table
@@ -222,7 +242,7 @@ end
 -- @param array  needle 给定的数组
 -- @return bool
 local function in_array(hack, needle)
-    if 'table' ~= type(needle) then
+    if "table" ~= type(needle) then
         return false
     end
     for _, v in pairs(needle) do
@@ -237,7 +257,7 @@ end
 -- @param string value 需要单双引号转义处理的字符串
 -- @return string 转义后的字符串
 local function quote_value(value)
-    if 'string' ~= type(value) then
+    if "string" ~= type(value) then
         return value
     end
     return quote_sql_str(value)
@@ -248,7 +268,7 @@ end
 -- @return string
 local function escape_string(str)
     -- 变量类型检查
-    if 'string' ~= type(str) then
+    if "string" ~= type(str) then
         return nil
     end
 
@@ -315,6 +335,7 @@ return {
     dump             = dump,
     empty            = empty,
     deep_copy        = deep_copy,
+    array_merge      = array_merge,
     table_is_array   = table_is_array,
     in_array         = in_array,
     quote_value      = quote_value,

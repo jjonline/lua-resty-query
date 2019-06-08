@@ -5,7 +5,7 @@
 local mysql = require "resty.mysql"
 local utils = require "resty.com.utils"
 
-local connection
+local connection = {}
 
 -- 支持断线重连的建立连接，内部可支持连接池
 connection.connect = function() end

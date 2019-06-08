@@ -6,7 +6,7 @@
 --- 实现后的用法如下：
 ---
 --- <引入query类>
---- local query = require "resty.query
+--- local query = require "resty.query"
 ---
 --- `实例化`query类产生1个类实例，参数为数组结构的配置
 --- local table_query = query(config)
@@ -29,14 +29,14 @@
 
 local utils      = require "resty.com.utils"
 local connection = require "resty.com.connection"
-local builder    = require "resty.com.builder" --query 继承至 builder
+local oop        = require "resty.com.oop"
+local builder    = require "resty.com.builder"
+local query      = oop.class(builder) --query 继承至 builder
 
 -- 定义内部存储变量
 local options = {
-    table = nil,
     connection = connection,
-    builder = nil,
-    where = nil,
+    where      = nil
 }
 
 local function parseTable()  end
@@ -46,20 +46,21 @@ local function parseJoin()  end
 local function parseLimit()  end
 local function parseGroup()  end
 
-builder.test = function(self)
+query.test = function(self)
     utils.dump(options, true)
     return self
 end
 
 -- 初始化方法，类似构造函数
--- @param array config 初始化传入配置数组参数
-builder.__construct = function (self, config)
-    options.config = config
+-- @param array config 初始化传入配置数组参数，数组结构参照上方 options.config
+query.__construct = function (self, _config)
+    -- builder方法设置配置参数，内部调用需显式传递self
+    self.setConfig(self, _config)
     return self
 end
 
 -- 显式执行Db连接
-builder.connect = function (self, ...)
+query.connect = function (self, ...)
 
     -- 与db建立tcp连接，支持断线重连
 
@@ -67,35 +68,35 @@ builder.connect = function (self, ...)
 end
 
 -- 显式执行Db关闭连接
-builder.close = function (self, ...)
+query.close = function (self, ...)
     return self
 end
 
 -- 获取底层connection对象
-builder.connection = function ()
+query.connection = function ()
     return options.connection
 end
 
 -- 闭包方法内执行事务
-builder.transaction = function (self, callable)
+query.transaction = function (self, callable)
 
     return self
 end
 
 -- 开始1个事务
-builder.startTrans = function (self, callable)
+query.startTrans = function (self, callable)
 
     return self
 end
 
 -- commit提交1个事务
-builder.commit = function (self, ...)
+query.commit = function (self, ...)
 
     return self
 end
 
 -- rollback回滚1个事务
-builder.rollback = function (self, ...)
+query.rollback = function (self, ...)
 
     return self
 end
@@ -103,31 +104,31 @@ end
 -- 依据action动作生成拟执行的sql语句
 -- @param string action 拟执行的动作，枚举值：insert|select|find|update|delete
 -- @return string
-builder.buildSQL = function(self, action)
+query.buildSQL = function(self, action)
 
     return self
 end
 
 -- 执行单条数据新增
-builder.insert = function (self, ...)
+query.insert = function (self, ...)
 
     return self
 end
 
 -- 执行单条数据新增并返回新增后的id
-builder.insertGetId = function (self, ...)
+query.insertGetId = function (self, ...)
 
     return self
 end
 
 -- 执行单条查询
-builder.find = function (self, ...)
+query.find = function (self, ...)
 
     return self
 end
 
 -- 执行多条查询
-builder.select = function (self, ...)
+query.select = function (self, ...)
 
     return self
 end
@@ -136,7 +137,7 @@ end
 -- @param integer page 当前页码，不传或传nil则自动从http变量名中读取，变量名称配置文件配置
 -- @param integer page_size 一页多少条数据，不传或传nil则自动从分页配置中读取
 -- @param boolean is_complex 是否复杂模式，不传则默认为简单模式 【复杂模式则返回值自动获取总记录数，简单模式则不获取总记录数】
-builder.page = function (self, page, page_size, is_complex)
+query.page = function (self, page, page_size, is_complex)
     utils.dump(page)
     utils.dump(page_size)
     utils.dump(utils.empty(is_complex))
@@ -144,13 +145,13 @@ builder.page = function (self, page, page_size, is_complex)
 end
 
 -- 执行更新操作
-builder.update = function (self, ...)
+query.update = function (self, ...)
 
     return self
 end
 
 -- 执行删除操作
-builder.delete = function (self, ...)
+query.delete = function (self, ...)
 
     return self
 end
@@ -158,7 +159,7 @@ end
 -- 执行原生sql的查询--select
 -- @param string SQL语句
 -- @param array  可选的参数绑定，SQL语句中的问号(?)依次使用该数组参数替换
-builder.query = function (self, ...)
+query.query = function (self, ...)
 
     return self
 end
@@ -166,11 +167,11 @@ end
 -- 执行原生sql的命令--update、delete、create、alter等
 -- @param string SQL语句
 -- @param array  可选的参数绑定，SQL语句中的问号(?)依次使用该数组参数替换
-builder.execute = function (self, ...)
+query.execute = function (self, ...)
 
     -- 返回影响行数
     return self
 end
 
 -- 可链式调用对象
-return builder
+return query
