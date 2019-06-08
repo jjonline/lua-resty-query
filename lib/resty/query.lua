@@ -6,10 +6,10 @@
 --- 实现后的用法如下：
 ---
 --- <引入query类>
---- local query = require("app.lib.query")
+--- local query = require "resty.query
 ---
---- <`实例化`query类产生1个类实例，参数为无前缀的表名称>
---- local table_query = query("table_name")
+--- `实例化`query类产生1个类实例，参数为数组结构的配置
+--- local table_query = query(config)
 ---
 --- 查询单条数据用法：
 ---     local one_result = table_query:where({where}):find()
@@ -24,7 +24,7 @@
 --- 新增单条数据用法：
 ---     local insert_result = table_query:insert({data}) 或 insertGetId
 --- 获取本次拟执行的SQL：
----     local insert_result = table_query:where({data}):limit():group():buildSQl("insert|find|select|update|delete")
+---     local sql = table_query:where(where):limit(limit):group(group):buildSQL("insert|find|select|update|delete")
 ----------------------------------------------------------------
 
 local utils      = require "resty.com.utils"

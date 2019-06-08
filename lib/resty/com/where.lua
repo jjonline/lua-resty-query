@@ -91,8 +91,11 @@ where_class.where = function(self, column, operate, condition)
     if utils.in_array(_operate, operator) then
         -- 操作符类型
         table_insert(_where, _operate)
-        -- 将operate参数传递过来的值quote之后存储
-        table_insert(_where, utils.quote_value(condition))
+        -- [not ]null无需condition
+        if  'NULL' ~= _operate and 'NOT NULL' ~= _operate then
+            -- 将operate参数传递过来的值quote之后存储
+            table_insert(_where, utils.quote_value(condition))
+        end
     else
         -- 等于查询简写形式
         table_insert(_where, '=')
