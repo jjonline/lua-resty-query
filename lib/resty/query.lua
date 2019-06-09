@@ -47,48 +47,32 @@ local options = {
 }
 ]]--
 
-local _M = {}
-local mt = { __index = _M }
+local selectSQL = "SELECT#DISTINCT# #FIELD# FROM #TABLE##JOIN##WHERE##GROUP##HAVING##ORDER##LIMIT##LOCK#"
+local insertSQL = "#INSERT# INTO #TABLE# (#FIELD#) VALUES (#DATA#)"
+local updateSQL = "UPDATE #TABLE# SET #SET##JOIN##WHERE##ORDER##LIMIT# #LOCK#"
+local deleteSQL = "DELETE FROM #TABLE##USING##JOIN##WHERE##ORDER##LIMIT# #LOCK#"
+local insertAllSQL = "#INSERT# INTO #TABLE# (#FIELD#) #DATA#"
 
--- 初始化方法，类似构造函数
--- @param array config 初始化传入配置数组参数，数组结构参照上方 options.config
-function _M.new(_, config)
-    local build    = builder:new(config)
-    local super_mt = getmetatable(build)
-    -- 当方法在子类中查询不到时，再去父类中去查找。
-    setmetatable(_M, super_mt)
-    -- 这样设置后，可以通过self.super.method(self, ...) 调用父类的已被覆盖的方法。
-    build.super = setmetatable({}, super_mt)
-    return setmetatable(build, mt)
-end
-
--- name方法隐含实例化过程，可直接 query:name(table_name)完成新query对象的生产
--- @param string table 不带前缀的数据表名称
-function _M.name(self, table)
-    utils.dump(self:getConfig())
-    return self:new():table(table)
-end
-
--- 内部方法：解析数据表名
+-- 内部方法：解析是否distinct唯一
 -- @return string
-local function parseTable(self)
-    -- 获取并检测是否设置表
-    local table = self.getOptions('table')
-    if utils.empty(table) then
-        utils.exception('please set table name without prefix first')
+local function parseDistinct(self)
+    local distinct = self:getOptions("distinct")
+
+    if not utils.empty(distinct) then
+        return " DISTINCT"
     end
 
-    return table
+    return ''
 end
 
 -- 内部方法：解析字段
 -- @return string
 local function parseField(self)
-    local field = self.getOptions('field')
+    local field = self:getOptions('field')
 
     -- 如果未调用field方法设置字段，则返回通配
     if utils.empty(field) then
-        return '*'
+        return "*"
     end
 
     -- 循环处理字段
@@ -102,33 +86,49 @@ local function parseField(self)
     return utils.trim(field_str, ',')
 end
 
--- 解析where内部子句
+-- 内部方法：解析数据表名
+-- @return string
+local function parseTable(self)
+    -- 获取并检测是否设置表
+    local table = self:getOptions("table")
+    if utils.empty(table) then
+        utils.exception('please set table name without prefix first')
+    end
+
+    return table
+end
+
+-- 构造where内部子句
 -- @param string logic 运算符 AND|OR
 -- @param array  item  字段|条件|查询值
 -- @return string
-local function parseWhereItem(logic, item)
+local function buildWhereItem(logic, item)
     local column    = item[1]
     local operate   = item[2]
     local condition = item[3]
 
-    if 'NULL' == operate then
+    if "NULL" == operate then
         return logic .. " " .. column .. " IS NULL"
-    elseif 'NOT NULL' == operate then
+    elseif "NOT NULL" == operate then
         return logic .. " " .. column .. " IS NOT NULL"
-    elseif 'BETWEEN' == operate then
+    elseif "BETWEEN" == operate then
         return logic .. " (" ..column .. " BETWEEN " .. condition[1] .. " AND " .. condition[2] .. ")"
-    elseif 'NOT BETWEEN' == operate then
+    elseif "NOT BETWEEN" == operate then
         return logic .. " (" ..column .. " BETWEEN " .. condition[1] .. " AND " .. condition[2] .. ")"
-    else
+    elseif utils.in_array(operate, {"LIKE", "NOT LIKE"}) then
         return logic .. " " .. column .. " " .. operate .. " " .. condition
+    elseif utils.in_array(operate, {"IN", "NOT IN"}) then
+        return logic .. " " .. column .. " " .. operate .. " (" .. utils.implode(",", condition) .. ")"
+    else
+        return logic .. " " .. column .. operate .. condition
     end
 end
 
--- 解析where条件
+-- 内部方法：构造where条件
 -- @return string
-local function parseWhere(this)
+local function buildWhere(this)
     local where_str = ''
-    local where     = this:getOptions('where')
+    local where     = this:getOptions("where")
 
     -- 循环处理条件
     for logic,list in pairs(where) do
@@ -148,7 +148,7 @@ local function parseWhere(this)
                 -- 保护模式执行回调函数，执行完毕sub_query对象将包含闭包条件
                 local is_ok,_ = pcall(item, sub_query)
                 if is_ok then
-                    local sub_where = logic .. " (" .. parseWhere(sub_query) .. ")" -- 闭包加入括号包裹
+                    local sub_where = logic .. " (" .. buildWhere(sub_query) .. ")" -- 闭包加入括号包裹
                     table_insert(where_arr, sub_where)
                 else
                     utils.exception('callable execute error,please use corrected method and param')
@@ -157,30 +157,144 @@ local function parseWhere(this)
                 -- +++++++++++++++++++++++++++++++++++++++
             elseif "table" == type(item) then
                 -- 字段、条件、值 类型解析
-                table_insert(where_arr, parseWhereItem(logic, item))
+                table_insert(where_arr, buildWhereItem(logic, item))
             end
         end
 
         -- 构造多个条件
         if utils.empty(where_str) then
             where_str = utils.implode(" ", where_arr)
-            -- 截取掉字符串开头的逻辑符号和空格，逻辑运算符号长度加两个空格，注意下标从1开始
+            -- 截取掉字符串开头的逻辑符号，逻辑运算符号长度加1个空格，注意下标从1开始
             where_str = string_sub(where_str, string_len(logic) + 2, string_len(where_str))
         else
-            where_str = where_str .. utils.implode(" ", where_arr)
+            where_str = where_str .. " " .. utils.implode(" ", where_arr)
         end
     end
 
     return where_str
 end
 
-local function parseJoin()  end
-local function parseLimit()  end
-local function parseGroup()  end
+-- 内部方法：解析where条件
+-- @return string
+local function parseWhere(self)
+    local where = buildWhere(self)
 
+    if utils.empty(where) then
+        return ""
+    end
+
+    return " WHERE " .. where
+end
+
+-- 解析join关联表
+-- @return string
+local function parseJoin(self)
+    local join = self:getOptions("join")
+
+    -- 没有join语句
+    if utils.empty(join) then
+        return ''
+    end
+
+    local join_str = ''
+    for _,item in pairs(join) do
+        join_str = join_str .. item[2] .. " JOIN " .. utils.set_back_quote(item[1][1]) .. " AS " .. utils.set_back_quote(item[1][2]) .. " ON " .. item[3]
+    end
+
+    return " " .. join_str .. " "
+end
+
+-- 内部方法：解析group分组
+-- @return string
+local function parseGroup(self)
+    local group = self:getOptions("group")
+
+    if utils.empty(group) then
+        return ''
+    end
+
+    return " GROUP BY " .. group
+end
+
+-- 内部方法：解析group分组搭配的having条件
+-- @return string
+local function parseHaving(self)
+    local having = self:getOptions("having")
+
+    if utils.empty(having) then
+        return ''
+    end
+
+    return " HAVING " .. having
+end
+
+-- 内部方法：解析order排序条件
+-- @return string
+local function parseOrder(self)
+    local order = self:getOptions('order')
+
+    if utils.empty(order) then
+        return ''
+    end
+
+    local order_str = ' ORDER BY '
+    for _,item in pairs(order) do
+        order_str = order_str .. item[1] .. " " ..item[2] .. ","
+    end
+
+    return utils.rtrim(order_str, ",")
+end
+
+-- 内部方法：解析limit限定条件
+-- @return string
+local function parseLimit(self)
+    local limit = self:getOptions("limit")
+
+    if utils.empty(limit) then
+        return ''
+    end
+
+    return " LIMIT " .. limit .. " "
+end
+
+-- 内部方法：解析加锁
+-- @return string
+local function parseLock(self)
+    local lock = self:getOptions("lock")
+
+    if utils.empty(lock) then
+        return ''
+    end
+
+    return " " .. lock .. " "
+end
+
+local _M = {}
+local mt = { __index = _M }
+
+-- 初始化方法，类似构造函数
+-- @param array config 初始化传入配置数组参数，数组结构参照上方 options.config
+function _M.new(_, config)
+    local build    = builder:new(config)
+    local super_mt = getmetatable(build)
+    -- 当方法在子类中查询不到时，再去父类中去查找。
+    setmetatable(_M, super_mt)
+    -- 这样设置后，可以通过self.super.method(self, ...) 调用父类的已被覆盖的方法。
+    build.super = setmetatable({}, super_mt)
+    return setmetatable(build, mt)
+end
+
+-- 内部debug调试方法
 function _M.debug(self, ...)
-    utils.dump(parseWhere(self))
+    utils.dump(parseDistinct(self))
     return self
+end
+
+-- name方法隐含实例化过程，可直接 query:name(table_name)完成新query对象的生产
+-- @param string table 不带前缀的数据表名称
+function _M.name(self, table)
+    utils.dump(self:getConfig())
+    return self:new():table(table)
 end
 
 -- 显式执行Db连接
@@ -254,6 +368,35 @@ end
 -- 执行多条查询
 function _M.select(self, ...)
 
+    local sql = utils.str_replace(
+            {
+                "#TABLE#",
+                "#DISTINCT#",
+                "#FIELD#",
+                "#JOIN#",
+                "#WHERE#",
+                "#GROUP#",
+                "#HAVING#",
+                "#ORDER#",
+                "#LIMIT#",
+                "#LOCK#"
+            },
+            {
+                parseTable(self),
+                parseDistinct(self),
+                parseField(self),
+                parseJoin(self),
+                parseWhere(self),
+                parseGroup(self),
+                parseHaving(self),
+                parseOrder(self),
+                parseLimit(self),
+                parseLock(self),
+            },
+            selectSQL
+    )
+
+    utils.dump(utils.rtrim(sql))
     return self
 end
 

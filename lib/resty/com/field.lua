@@ -56,7 +56,7 @@ end
 local function parse_string(field)
     local s_field = utils.trim(field) -- 去除两端空白后执行分析
     if "*" == s_field then
-        return {"*"}
+        return {}
     end
 
     -- 定义返回的数组

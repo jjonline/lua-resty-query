@@ -213,7 +213,7 @@ end
 --- @param string option 可选的内部构造器选项名称
 --- @return mixed
 local function _getOptions(self, option)
-    if self.options[option] then
+    if self.options[option] ~= nil then
         return self.options[option]
     end
 

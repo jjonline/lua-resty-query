@@ -192,6 +192,43 @@ local function implode(separator,array)
     return table_concat(array, separator)
 end
 
+-- 转移匹配模式特殊字符为其本身的含义表示法
+-- @param string str 待escape的字符串
+-- @return string
+local function escape_pattern(str)
+    -- 变量类型检查
+    if "string" ~= type(str) then
+        return nil
+    end
+
+    local result,_ = string_gsub(str, "[%^%$%(%)%%%.%[%]%*%+%-%?]", function(match)
+        return "%" .. match
+    end)
+
+    return result
+end
+
+-- 字符串替换
+-- @param string|array search  拟查找替换的字符或多个字符串数组
+-- @param string|array replace 查找替换后的字符串或字符串数组
+-- @param string       subject 被查找替换的字符串
+-- @return string
+local function str_replace(search, replace, subject)
+    if "string" == type(search) and "string" == type(replace) then
+        return string_gsub(subject, search, escape_pattern(replace))
+    end
+
+    if "table" == type(search) and "table" == type(replace) and #search == #replace then
+        for key,val in pairs(search) do
+            subject = str_replace(val, replace[key], subject)
+        end
+
+        return subject
+    end
+
+    return false
+end
+
 -- 深度复制1个table
 local function deep_copy(orig)
     local orig_type = type(orig)
@@ -349,6 +386,8 @@ return {
     logger           = logger,
     explode          = explode,
     implode          = implode,
+    escape_pattern   = escape_pattern,
+    str_replace      = str_replace,
     strip_back_quote = strip_back_quote,
     set_back_quote   = set_back_quote,
     unique           = unique,
