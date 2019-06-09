@@ -2,17 +2,16 @@
 --- Db底层查询构造器
 ---
 local utils        = require "resty.com.utils"
-local field        = require "resty.com..field"
-local where_class  = require "resty.com..where"
-local oop          = require "resty.com.oop"
+local field        = require "resty.com.field"
+local where_class  = require "resty.com.where"
 local type         = type
 local tonumber     = tonumber
+local setmetatable = setmetatable
 local table_insert = table.insert
 local string_lower = string.lower
-local builder      = oop.class() --oop实现继承、链式调用
 
--- 链式调用where的本地对象
-local where_object = where_class()
+local _M = {}
+local mt = { __index = _M }
 
 -- 构造器内部各参数存储容器，内部结构如下:
 --[[
@@ -87,20 +86,24 @@ local where_object = where_class()
     -- 是否distinct唯一
     options.distinct = false;
 ]]--
+
+-- 数据库配置，多个实例可共用
+local config  = {
+    host      = "127.0.0.1",
+    port      = 3306,
+    database  = "",
+    username  = "",
+    password  = "",
+    charset   = 'utf8mb4',
+    collation = 'utf8mb4_general_ci',
+    prefix    = "",
+    strict    = true,
+    engine    = nil,
+}
+--[[
+-- 内部option结构示例
 local options = {
-    config  = {
-        host      = "127.0.0.1",
-        port      = 3306,
-        database  = "",
-        username  = "",
-        password  = "",
-        charset   = 'utf8mb4',
-        collation = 'utf8mb4_general_ci',
-        prefix    = "",
-        strict    = true,
-        engine    = nil,
-    },
-    table  = nil,
+    table  = '',
     field  = {},
     where  = {
         AND = {},
@@ -114,18 +117,19 @@ local options = {
     distinct  = false,
     lock      = '',
 }
+]]--
 
 -- 构造器内部分析处理表名称的方法
 -- @param string table_name 参数形式：no_prefix_table|no_prefix_table as table_alias
 -- @return string `with_prefix_table`|`with_prefix_table` AS `table_alias`
-local parseJoinTable = function(table_name)
+local parseJoinTable = function(self, table_name)
    -- 去除可能的两端空白 后 按空格截取后长度之可能为1、2、3的数组
     local _table_array = utils.explode('%s+', utils.trim(table_name));
 
     -- 使用了as语法显式设置别名
     if #_table_array == 3 then
         return {
-            options.config.prefix .. _table_array[1],
+            self._config.prefix .. _table_array[1],
             _table_array[3]
         }
     end
@@ -133,7 +137,7 @@ local parseJoinTable = function(table_name)
     -- 使用了空格显式设置别名
     if #_table_array == 2 then
         return {
-            options.config.prefix .. _table_array[1],
+            self._config.prefix .. _table_array[1],
             _table_array[2]
         }
     end
@@ -141,75 +145,134 @@ local parseJoinTable = function(table_name)
     -- 未显式设置别名，使用无前缀的表名作为别名
     if #_table_array == 1 then
         return {
-            options.config.prefix .. _table_array[1],
+            self._config.prefix .. _table_array[1],
             _table_array[1]
         }
     end
 
     -- 解析出的数组长度大于3或为0，join的格式有误
-    utils.logger("[parse error]JOIN table name param format error,please modify it")
+    utils.exception("[parse error]JOIN table name param format error,please modify it")
     return nil
 end
 
 -- 参数配置设置方式【必须是第一个被调用的方法】
 -- @param array _config Db数据库连接配置参数数组
-builder.setConfig = function(self, _config)
+local function _setConfig(self, _config)
     -- 尝试合并数组
-    _config = utils.array_merge(options.config, _config)
+    _config = utils.array_merge(config, _config)
 
     -- 合并后结果正常则赋值
     if not utils.empty(_config) then
-        options.config = _config
+        config = _config
+    end
+
+    return self
+end
+_M.setConfig = _setConfig
+
+-- 获取配置
+-- @param string key 可选的按指定配置项返回
+-- @return mixed
+local function _getConfig(_, key)
+    if config[key] then
+        return config[key]
+    end
+
+    -- 返回数组
+    return config
+end
+_M.getConfig = _getConfig
+
+-- 默认情况下一次设置配置，底层可自动共用这一份配置，也就是说惯例情况下配置是类级别的
+-- 该方法用于设置对象实例自身的配置参数，用于某些情况下的实例级别配置调整
+-- @param string _config 指定格式的配置数组
+function _M.setSelfConfig(self, _config)
+    _config = utils.array_merge(self._config, _config)
+
+    -- 合并后结果正常则赋值
+    if not utils.empty(_config) then
+        self._config = _config
     end
 
     return self
 end
 
--- 获取配置
--- @param string key 可选的按指定配置项返回
--- @return mixed
-builder.getConfig = function(self, key)
-    if options.config[key] then
-        return options.config[key]
+-- 默认情况下一次设置配置，底层可自动共用这一份配置，也就是说惯例情况下配置是类级别的
+-- 该方法用于获取对象实例自身的配置参数
+-- @param string _config 指定格式的配置数组
+function _M.getSelfConfig(self, key)
+    if self._config[key] then
+        return self._config[key]
     end
 
     -- 返回数组
-    return options.config
+    return self._config
 end
 
 --- 获取builder内部构造器选项项目table
 --- @param string option 可选的内部构造器选项名称
 --- @return mixed
-builder.getOptions = function(option)
-    if options[option] then
-        return options[option]
+local function _getOptions(self, option)
+    if self.options[option] then
+        return self.options[option]
     end
 
     -- 返回数组
-    return options
+    return self.options
+end
+_M.getOptions = _getOptions
+
+-- new语法构造新对象
+function _M.new(self, _config)
+    if not utils.empty(_config) then
+        _setConfig(self, _config)
+    end
+
+    -- 复制一份config配置，首次设置config后无需再显式设置配置参数
+    local __config = utils.cold_copy(config)
+
+    local _self = {
+        _config = __config,
+        _field  = field:new(),
+        _where  = where_class:new(),
+        options = {
+            table     = '',
+            field     = {},
+            where     = { AND = {}, OR  = {}, },
+            join      = {},
+            order     = {},
+            limit     = '',
+            group     = '',
+            having    = '',
+            distinct  = false,
+            lock      = '',
+        }
+    }
+
+    return setmetatable(_self, mt)
 end
 
 --- 设置表名称
 --- @param string table 不带前缀的数据表名称
-builder.table = function(self, table)
+function _M.table(self, table)
     if 'string' ~= type(table) then
         -- table只支持字符串形式的参数
-        utils.logger("[parse error]TABLE name param type error,please use string")
+        utils.exception("[parse error]TABLE name param type error,please use string")
         return self
     end
 
     -- 拼接成完整表名称后反引号包裹
-    options.table = utils.set_back_quote(options.config.prefix .. utils.strip_back_quote(table))
+    self.options.table = utils.set_back_quote(self._config.prefix .. utils.strip_back_quote(table))
     return self
 end
 
 --- 设置查询表字段名称
 --- @param string|array fields 需要查的表字段名称，字符串或数组
-builder.field = function(self, fields)
+function _M.field(self, fields)
     --- field模块设置处理字段
-    field.set(fields)
+    self._field:set(fields)
     --- 从field模块读取出设置处理好的字段名称数组
-    options.field = field.get(true)
+    self.options.field = self._field:get(true)
 
     return self
 end
@@ -219,10 +282,10 @@ end
 -- @param string|where condition 关联提交，字符串形式或者where对象
 -- @param string operate         join的类型，inner|left|right，默认inner
 -- @param array binds            可选的对condition进行参数绑定的额外变量参数，condition中必须使用问号(?)占位
-builder.join = function(self, table, condition, operate, binds)
+function _M.join(self, table, condition, operate, binds)
     -- 检查必选参数
     if utils.empty(table) or utils.empty(condition) then
-        utils.logger('[parse error]JOIN required param `table` or `condition` is empty')
+        utils.exception('[parse error]JOIN required param `table` or `condition` is empty')
         return self
     end
 
@@ -231,9 +294,9 @@ builder.join = function(self, table, condition, operate, binds)
     local join = {}
 
     -- 解析join的表名称
-    local join_table = parseJoinTable(table)
+    local join_table = parseJoinTable(self, table)
     if utils.empty(join_table) then
-        utils.logger('[parse error]JOIN parse param `table` occur fatal error')
+        utils.exception('[parse error]JOIN parse param `table` occur fatal error')
         return self
     end
     table_insert(join, join_table)
@@ -255,7 +318,7 @@ builder.join = function(self, table, condition, operate, binds)
     table_insert(join,condition)
 
     -- 将解析的结果保存
-    table_insert(options.join, join)
+    table_insert(self.options.join, join)
 
     return self
 end
@@ -264,12 +327,12 @@ end
 -- @param string column  字段名称
 -- @param string operate 操作符
 -- @param string|array condition 操作条件
-builder.where = function(self, column, operate, condition)
+function _M.where(self, column, operate, condition)
     -- 传递给内部where对象处理
-    where_object:where(column, operate, condition)
+    self._where.where(self._where, column, operate, condition)
 
     -- 从where对象获取到处理好的内部options
-    options.where = where_object:getOptions()
+    self.options.where = self._where:getOptions()
 
     return self
 end
@@ -278,97 +341,97 @@ end
 -- @param string column  字段名称
 -- @param string operate 操作符
 -- @param string|array condition 操作条件
-builder.whereOr = function(self, column, operate, condition)
+function _M.whereOr(self, column, operate, condition)
     -- 传递给内部where对象处理
-    where_object:whereOr(column, operate, condition)
+    self._where.whereOr(self._where, column, operate, condition)
 
     -- 从where对象获取到处理好的内部options
-    options.where = where_object:getOptions()
+    self.options.where = self._where:getOptions()
 
     return self
 end
 
 -- IS NULL 快捷用法
 -- @param string column 字段名称
-builder.whereNull = function(self, column)
-    where_object.where(self, column, 'NULL')
+function _M.whereNull(self, column)
+    self.where(self, column, 'NULL')
     return self
 end
 
 -- IS NOT NULL 快捷用法
 -- @param string column 字段名称
-builder.whereNotNull = function(self, column)
-    where_object.where(self, column, 'NOT NULL')
+function _M.whereNotNull(self, column)
+    self.where(self, column, 'NOT NULL')
     return self
 end
 
 -- In快捷用法
 -- @param string column 字段名称
 -- @param string|array condition 操作条件
-builder.whereIn = function(self, column, condition)
-    where_object.where(self, column, 'IN', condition)
+function _M.whereIn(self, column, condition)
+    self.where(self, column, 'IN', condition)
     return self
 end
 
 -- Not In快捷用法
 -- @param string column 字段名称
 -- @param string|array condition 操作条件
-builder.whereNotIn = function(self, column, condition)
-    where_object.where(self, column, 'NOT IN', condition)
+function _M.whereNotIn(self, column, condition)
+    self.where(self, column, 'NOT IN', condition)
     return self
 end
 
 -- between快捷用法
 -- @param string column 字段名称
 -- @param string|array condition 操作条件
-builder.whereBetween = function(self, column, condition)
-    where_object.where(self, column, 'BETWEEN', condition)
+function _M.whereBetween(self, column, condition)
+    self.where(self, column, 'BETWEEN', condition)
     return self
 end
 
 -- Not between快捷用法
 -- @param string column 字段名称
 -- @param string|array condition 操作条件
-builder.whereNotBetween = function(self, column, condition)
-    where_object.where(self, column, 'NOT BETWEEN', condition)
+function _M.whereNotBetween(self, column, condition)
+    self.where(self, column, 'NOT BETWEEN', condition)
     return self
 end
 
 -- LIKE快捷用法
 -- @param string column 字段名称
 -- @param string|array condition 操作条件
-builder.whereLike = function(self, column, condition)
-    where_object.where(self, column, 'LIKE', condition)
+function _M.whereLike(self, column, condition)
+    self.where(self, column, 'LIKE', condition)
     return self
 end
 
 -- Not LIKE快捷用法
 -- @param string column 字段名称
 -- @param string|array condition 操作条件
-builder.whereNotLike = function(self, column, condition)
-    where_object.where(self, column, 'NOT LIKE', condition)
+function _M.whereNotLike(self, column, condition)
+    self.where(self, column, 'NOT LIKE', condition)
     return self
 end
 
 -- Exp表达式用法
 -- @param string column 字段名称
 -- @param string|array condition 操作条件
-builder.whereExp = function(self, column, condition)
-    where_object.where(self, column, 'EXP', condition)
+function _M.whereExp(self, column, condition)
+    self.where(self, column, 'EXP', condition)
     return self
 end
 
 -- 设置order排序字段和条件
 -- @param string|array column 需指定的排序字段名称
 -- @param string sorted       排序类型，ASC|DESC，不传则默认ASC
-builder.order = function(self, column, sorted)
+function _M.order(self, column, sorted)
     if not utils.in_array(sorted, {'ASC', 'DESC'}) then
         sorted = 'ASC'
     end
 
     -- 字符串形式
     if 'string' == type(column) then
-        table_insert(options.order, {utils.set_back_quote(utils.strip_back_quote(column)), sorted})
+        table_insert(self.options.order, {utils.set_back_quote(utils.strip_back_quote(column)), sorted})
     end
 
     -- 关联数组形式多个排序
@@ -378,7 +441,7 @@ builder.order = function(self, column, sorted)
                 if not utils.in_array(v_sorted, {'ASC', 'DESC'}) then
                     v_sorted = 'ASC'
                 end
-                table_insert(options.order, {utils.set_back_quote(utils.strip_back_quote(k_column)), v_sorted})
+                table_insert(self.options.order, {utils.set_back_quote(utils.strip_back_quote(k_column)), v_sorted})
             end
         end
     end
@@ -389,19 +452,19 @@ end
 -- 设置limit条件，只能调用1次，多次调用后面的将覆盖前面的
 -- @param integer offset 偏移量
 -- @param integer length 读取数量
-builder.limit = function(self, offset, length)
+function _M.limit(self, offset, length)
     offset = tonumber(offset) or nil
     -- 限定返回条数
     if 'number' == type(offset) and utils.empty(length) then
-        options.limit = offset
+        self.options.limit = offset
         return self
     end
 
     length = tonumber(length) or nil
     if not offset or not length then
-        utils.logger('[parse error]LIMIT offset and length must be integer')
+        utils.exception('[parse error]LIMIT offset and length must be integer')
     else
-        options.limit = offset .. ',' .. length
+        self.options.limit = offset .. ',' .. length
     end
 
     return self
@@ -409,12 +472,12 @@ end
 
 -- 设置group条件，只能调用1次，多次调用后面的将覆盖前面的
 -- @param string column 需要分组的字段名，仅支持字符串
-builder.group = function(self, column)
+function _M.group(self, column)
     -- 仅支持字符串参数
     if 'string' == type(column) then
-        options.group = utils.trim(column)
+        self.options.group = utils.trim(column)
     else
-        utils.logger('[parse error]GROUP param must be string')
+        utils.exception('[parse error]GROUP param must be string')
     end
 
     return self
@@ -422,13 +485,13 @@ end
 
 -- 设置having条件，配合group使用
 -- @param string condition having条件，字符串形式支持聚合函数
-builder.having = function(self, condition)
+function _M.having(self, condition)
     -- 仅支持字符串参数
     if 'string' == type(condition) then
         -- having支持聚合函数，这里仅去掉可能两端空白，不做进一步处理
-        options.having = utils.trim(condition)
+        self.options.having = utils.trim(condition)
     else
-        utils.logger('[parse error]HAVING param must be string')
+        utils.exception('[parse error]HAVING param must be string')
     end
 
     return self
@@ -436,23 +499,23 @@ end
 
 -- 设置distinct唯一
 -- @param bool distinct 是否唯一，布尔值
-builder.distinct = function(self, distinct)
+function _M.distinct(self, distinct)
     -- 等价空值则不distinct，等价非空值则distinct
-    options.distinct = not utils.empty(distinct)
+    self.options.distinct = not utils.empty(distinct)
 
     return self
 end
 
 -- 设置锁机制
 -- @param bool|string lock_mode 传入true则是FOR UPDATE锁，传入字符串则是特殊的锁，譬如：lock in share mode
-builder.lock = function(self, lock_mode)
+function _M.lock(self, lock_mode)
     if true == lock_mode then
-        options.lock = 'FOR UPDATE'
+        self.options.lock = 'FOR UPDATE'
     end
     if 'string' == type(lock_mode) then
-        options.lock = utils.trim(lock_mode)
+        self.options.lock = utils.trim(lock_mode)
     end
     return self
 end
 
-return builder
+return _M

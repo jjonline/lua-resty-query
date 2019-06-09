@@ -2,8 +2,13 @@
 --- Db数据表字段管理器
 ---
 local utils        = require "resty.com.utils"
+local type         = type
 local pairs        = pairs
 local table_insert = table.insert
+local setmetatable = setmetatable
+
+local _M = {}
+local mt = { __index = _M }
 
 -- 定义字段对象内部的数据结构
 -- 内部格式如下：
@@ -93,9 +98,14 @@ local function parse_array(array)
     return r_field
 end
 
+-- new语法构造新对象
+function _M.new(_)
+    return setmetatable({field = {}}, mt)
+end
+
 -- 设置1个query的字段对象
 -- @param mixed field 字符串、table等格式
-_field.set = function(field)
+function _M.set(self, field)
     local field_array = {}
     if "string" == type(field) then
         field_array = parse_string(field)
@@ -103,27 +113,27 @@ _field.set = function(field)
         field_array = parse_array(field)
     else
         -- 暂时仅支持string和table类型参数，其他类型报错
-        utils.logger("[parse error]FIELD param error, please modify it")
-        return _field.field
+        utils.exception("[parse error]FIELD param error, please modify it")
+        return self.field
     end
 
     -- 逐个添加进数组
     for _,v in pairs(field_array) do
-        table_insert(_field.field, v)
+        table_insert(self.field, v)
     end
 
      -- 去重返回所有已设置的字段
-    _field.field = utils.unique(_field.field)
-    return _field.field
+    self.field = utils.unique(self.field)
+    return self.field
 end
 
 -- 获取1个query使用的字段对象
 -- @param boolean is_array 调试用参数，true返回table false或不传返回字符串
-_field.get = function(is_array)
+function _M.get(self, is_array)
     if utils.empty(is_array) then
-        return utils.implode(",", _field.field)
+        return utils.implode(",", self.field)
     end
-    return _field.field
+    return self.field
 end
 
-return _field
+return _M

@@ -1,6 +1,7 @@
 ---
 --- helper方法类
 ---
+local error         = error
 local type          = type
 local pairs         = pairs
 local next          = next
@@ -101,6 +102,13 @@ local function logger(log, level)
     ngx_log(level, log)
 end
 
+-- 抛出异常
+-- @param string message
+local function exception(message)
+    logger(message, ngx.ERR) -- 错误日志
+    error(message)
+end
+
 -- 去除字符串中的所有反引号
 -- @param string s 待处理的字符串
 -- @return string
@@ -187,7 +195,7 @@ end
 -- 深度复制1个table
 local function deep_copy(orig)
     local orig_type = type(orig)
-    local copy
+    local copy = {}
     if "table" == orig_type then
         copy = {}
         for orig_key, orig_value in next, orig, nil do
@@ -200,13 +208,28 @@ local function deep_copy(orig)
     return copy
 end
 
+-- 浅度复制一个table
+local function cold_copy(orig)
+    local copy
+
+    if "table" == type(orig) then
+        copy = {}
+        for k,v in pairs(orig) do
+            copy[k] = v
+        end
+    else
+        copy = orig
+    end
+
+    return copy
+end
+
 -- 合并两个数组
 -- @param array   arr1 原始数组
 -- @param array   arr2 新变量类型数组
 -- @return array|false
 local function array_merge(arr1, arr2)
     if "table" ~= type(arr1) or "table" ~= type(arr2) then
-        logger("array_merge param must be table or array")
         return false
     end
 
@@ -299,7 +322,7 @@ end
 local function db_bind_value(sql, value)
     -- 检查参数
     if not table_is_array(value) then
-        logger('[parse error]db_bind_value param error')
+        exception('[parse error]db_bind_value param error')
         return sql
     end
 
@@ -312,7 +335,7 @@ local function db_bind_value(sql, value)
 
     -- 给定的待绑定的参数数量与sql中的问号变量不一致
     if total ~= #value then
-        logger('[parse error]db_bind_value bind value length not equal sql variable length')
+        exception('[parse error]db_bind_value bind value length not equal sql variable length')
         return sql
     end
 
@@ -322,6 +345,7 @@ end
 
 -- 返回helper
 return {
+    exception        = exception,
     logger           = logger,
     explode          = explode,
     implode          = implode,
@@ -335,6 +359,7 @@ return {
     dump             = dump,
     empty            = empty,
     deep_copy        = deep_copy,
+    cold_copy        = cold_copy,
     array_merge      = array_merge,
     table_is_array   = table_is_array,
     in_array         = in_array,

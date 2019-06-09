@@ -8,20 +8,40 @@ local setmetatable = setmetatable
 -- @param mixed class名称，
 -- @param mixed ... 可变参数，作为被实例化对象的__construct方法调用的参数
 local function _instance(class, ...)
-    local inst = setmetatable({__class=class}, {__index = class})
-    if inst.__construct then
-        inst:__construct(...)
+    local instance = setmetatable({}, {__index = class})
+
+    if instance.__construct then
+        instance:__construct(...)
     end
-    return inst
+
+    instance.__index = class
+
+    return instance
 end
 
 -- 创建1个对象类
 -- @param mixed 可选的父类、基类
 local function class(base)
-    return setmetatable({__parent = base}, {
+    local sub = {}
+
+    setmetatable(sub, {
         __call = _instance,
-        __index = base
+        __index = base or {}
     })
+
+    function sub.new(self, ...)
+        local instance = setmetatable({}, {__index = sub})
+
+        if instance.__construct then
+            instance:__construct(...)
+        end
+
+        instance.__index = self
+
+        return instance
+    end
+
+    return sub
 end
 
 -- 检查对象是否为某类的实例

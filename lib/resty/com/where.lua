@@ -1,12 +1,15 @@
 ---
 --- Db底层where条件查询构造器
 ---
-local oop          = require "resty.com.oop"
 local utils        = require "resty.com.utils"
 local string_upper = string.upper
 local type         = type
+local pairs        = pairs
 local table_insert = table.insert
-local where_class  = oop.class() --oop实现继承、链式调用
+local setmetatable = setmetatable
+
+local _M = {}
+local mt = { __index = _M }
 
 --[[
     -- where条件内部结构
@@ -33,11 +36,13 @@ local where_class  = oop.class() --oop实现继承、链式调用
         },
     }
 ]]
--- where方法内部的保存结构
+
+--[[ where方法内部的保存结构，对外暴露
 local options = {
     AND = {},
     OR  = {}
 }
+]]--
 
 --- 预定义查询表达式操作符
 local operator = {
@@ -58,18 +63,68 @@ local operator = {
     'EXP', --- 表达式查询
 }
 
+-- new语法构造新对象
+function _M.new(_)
+    local self = {
+        options  = {
+            AND = {},
+            OR  = {}
+        }
+    }
+
+    return setmetatable(self, mt)
+end
+
+-- 内部方法：解析between|not between条件值
+local function parseBetweenVal(range)
+    -- 字符串类型使用逗号分隔解析
+    if "string" == type(range) then
+        range = utils.explode(',', range)
+    end
+
+    -- 数组类型，两个元素
+    if "table" == type(range) and #range == 2 then
+        return {
+            utils.quote_value(utils.trim(range[1])),
+            utils.quote_value(utils.trim(range[2]))
+        }
+    end
+
+    utils.exception("where between param error")
+end
+
+-- 内部方法：解析in|not in条件值
+local function parseInVal(range)
+    -- 字符串类型使用逗号分隔解析
+    if "string" == type(range) then
+        range = utils.explode(',', range)
+    end
+
+    -- 数组类型，两个元素
+    local in_arr = {}
+    if "table" == type(range) then
+        for _,val in pairs(range) do
+            table_insert(in_arr, utils.quote_value(utils.trim(val)))
+        end
+
+        return in_arr
+    end
+
+    utils.exception("where in param error")
+end
+
 -- 获取内部保存的where整个数组
-where_class.getOptions = function(self)
-    return options
+function _M.getOptions(self)
+    return self.options
 end
 
 -- where构造查询条件核心方法
 -- @param string column  字段名称
 -- @param string operate 操作符
 -- @param string|array condition 操作条件
-where_class.where = function(self, column, operate, condition)
+function _M.where(self, column, operate, condition)
     if not column then
-        utils.logger('[parse error]WHERE param column is missing')
+        utils.exception('[parse error]WHERE param column is missing')
         return self
     end
 
@@ -79,7 +134,7 @@ where_class.where = function(self, column, operate, condition)
     -- 处理column字段
     -- 回调函数形式实现闭包括号功能
     if 'function' == type(column) then
-        table_insert(options.AND, column)
+        table_insert(self.options.AND, column)
         return self
     end
 
@@ -93,8 +148,14 @@ where_class.where = function(self, column, operate, condition)
         table_insert(_where, _operate)
         -- [not ]null无需condition
         if  'NULL' ~= _operate and 'NOT NULL' ~= _operate then
-            -- 将operate参数传递过来的值quote之后存储
-            table_insert(_where, utils.quote_value(condition))
+            if utils.in_array(_operate, {'IN', 'NOT IN'}) then
+                table_insert(_where, parseInVal(condition))
+            elseif utils.in_array(_operate, {'BETWEEN', 'NOT BETWEEN'}) then
+                table_insert(_where, parseBetweenVal(condition))
+            else
+                -- 将operate参数传递过来的值quote之后存储
+                table_insert(_where, utils.quote_value(condition))
+            end
         end
     else
         -- 等于查询简写形式
@@ -104,7 +165,7 @@ where_class.where = function(self, column, operate, condition)
     end
 
     -- 内部结构化存储
-    table_insert(options.AND, _where)
+    table_insert(self.options.AND, _where)
 
     return self
 end
@@ -113,9 +174,9 @@ end
 -- @param string column  字段名称
 -- @param string operate 操作符
 -- @param string|array condition 操作条件
-where_class.whereOr = function(self, column, operate, condition)
+function _M.whereOr(self, column, operate, condition)
     if not column then
-        utils.logger('[parse error]whereOr param column is missing')
+        utils.exception('[parse error]whereOr param column is missing')
         return self
     end
 
@@ -125,7 +186,7 @@ where_class.whereOr = function(self, column, operate, condition)
     -- 处理column字段
     -- 回调函数形式实现闭包括号功能
     if 'function' == type(column) then
-        table_insert(options.OR, column)
+        table_insert(self.options.OR, column)
         return self
     end
 
@@ -139,8 +200,14 @@ where_class.whereOr = function(self, column, operate, condition)
         table_insert(_where, _operate)
         -- [not ]null无需condition
         if  'NULL' ~= _operate and 'NOT NULL' ~= _operate then
-            -- 将operate参数传递过来的值quote之后存储
-            table_insert(_where, utils.quote_value(condition))
+            if utils.in_array(_operate, {'IN', 'NOT IN'}) then
+                table_insert(_where, parseInVal(condition))
+            elseif utils.in_array(_operate, {'BETWEEN', 'NOT BETWEEN'}) then
+                table_insert(_where, parseBetweenVal(condition))
+            else
+                -- 将operate参数传递过来的值quote之后存储
+                table_insert(_where, utils.quote_value(condition))
+            end
         end
     else
         -- 等于查询简写形式
@@ -150,9 +217,9 @@ where_class.whereOr = function(self, column, operate, condition)
     end
 
     -- 内部结构化存储
-    table_insert(options.OR, _where)
+    table_insert(self.options.OR, _where)
 
     return self
 end
 
-return where_class
+return _M
