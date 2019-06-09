@@ -1,4 +1,37 @@
-[TOC]
+# new方法
+
+功能：设置需要操作的数据表
+
+用法：
+
+* `query:new(config)` 实例化query对象并设置连接配置
+
+> 其中config为固定结构的table数组
+
+config结构
+
+````
+{
+    host      = "127.0.0.1",
+    port      = 3306,
+    database  = "",
+    username  = "",
+    password  = "",
+    charset   = 'utf8mb4',
+    collation = 'utf8mb4_general_ci',
+    prefix    = "",
+    strict    = true,
+    engine    = nil,
+}
+````
+
+# name方法
+
+功能：快捷实例化query对象并设置无前缀数据表名称
+
+用法：
+
+* `query:name(table)` 实例化query对象并设置无前缀数据表名称
 
 # table 方法
 
