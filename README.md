@@ -22,6 +22,7 @@ config结构
     prefix    = "",
     strict    = true,
     engine    = nil,
+    page_size = 10,
 }
 ````
 
@@ -32,6 +33,7 @@ config结构
 用法：
 
 * `query:name(table)` 实例化query对象并设置无前缀数据表名称
+
 
 # table 方法
 
@@ -127,6 +129,15 @@ end)
 ````
 构造的sql为：`(id=1 OR cid=2) AND (id= 3 OR name LIKE '%晶晶%')`
 
+# data 方法
+
+功能：设置数据方法，用于insert新增或update更新数据的设置
+
+用法：
+
+* `data('id', 1)` 字段与值的设置方式，两个参数
+* `order({id = 1, name = "晶晶""})` 数组形式设置多个键值对，一个参数
+
 # order 方法
 
 功能：设置order排序条件
@@ -149,6 +160,18 @@ end)
 * `limit(10)` 单个参数形式，限制查询指定参数指定数目的数据
 * `limit(1,10)` int数字型参数，从偏移量开始查询
 * `limit('1','10')` 支持字符串形式的整数
+
+# page 方法
+
+功能：自然语义设置分页
+
+方法原型：`page(page,page_size)` 第一个参数为当前页码，第二个参数为1页数据条数
+
+用法：
+
+* `page(1,10)` 第一页数据，每页10条数，等价于`limit(0, 10)` 或 `limit(10)`
+* `page(1)` 第一页数据，每页条数参数省略，则从配置项`page_size`中读取，默认配置值10
+
 
 # group 方法
 

@@ -188,7 +188,7 @@ end
 -- @param string separator 数组元素相互连接之间的字符串
 -- @param array array 待拼接的数组
 -- @return array
-local function implode(separator,array)
+local function implode(separator, array)
     return table_concat(array, separator)
 end
 

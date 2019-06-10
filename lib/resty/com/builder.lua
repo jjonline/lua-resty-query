@@ -6,6 +6,7 @@ local field        = require "resty.com.field"
 local where_class  = require "resty.com.where"
 local type         = type
 local tonumber     = tonumber
+local pairs        = pairs
 local setmetatable = setmetatable
 local table_insert = table.insert
 local string_lower = string.lower
@@ -76,6 +77,12 @@ local mt = { __index = _M }
     -- limit子句内部结构
     options.limit = '0,50';
 
+    -- page方法设置的参数
+    options.page  = {0,50};
+
+    -- data方法设置的key/value键值对值
+    options.data  = {key = value, key1 = value1};
+
     -- group子句内部结构的字段名
     options.group = 'column_name';
     -- 或 多个字段：options.group = 'column_name,column_name1';
@@ -99,6 +106,7 @@ local config  = {
     prefix    = "",
     strict    = true,
     engine    = nil,
+    page_size = 10, -- 分页读取时1页条数
 }
 --[[
 -- 内部option结构示例
@@ -242,6 +250,8 @@ function _M.new(self, _config)
             join      = {},
             order     = {},
             limit     = '',
+            data      = {},
+            page      = {},
             group     = '',
             having    = '',
             distinct  = false,
@@ -449,6 +459,38 @@ function _M.order(self, column, sorted)
     return self
 end
 
+-- 设置数据对象，用于insert|update等操作
+-- @param string|array 设置的数据内容数组或字符串字段名称
+-- @param string       要设置的数据对象值【使用两个参数形式时第一个参数必须是字段名】
+function _M.data(self, column, value)
+    local data = self.options.data
+
+    -- 数组形式设置data
+    if "table" == type(column) then
+        for key,val in pairs(column) do
+            -- 处理字段名
+            key = utils.set_back_quote(utils.strip_back_quote(key))
+
+            -- 转义字段值并使用覆盖方式添加值
+            data[key] = utils.quote_value(val)
+        end
+    end
+
+    -- 两个参数形式设置key-value
+    if "string" == type(column) and value ~= nil then
+        -- 处理字段名
+        local key = utils.set_back_quote(utils.strip_back_quote(column))
+
+        -- 转义字段值并使用覆盖方式添加值
+        data[key] = utils.quote_value(value)
+    end
+
+    -- 内部记录设置的data
+    self.options.data = data
+
+    return self
+end
+
 -- 设置limit条件，只能调用1次，多次调用后面的将覆盖前面的
 -- @param integer offset 偏移量
 -- @param integer length 读取数量
@@ -466,6 +508,29 @@ function _M.limit(self, offset, length)
     else
         self.options.limit = offset .. ',' .. length
     end
+
+    return self
+end
+
+-- 设置分页
+-- @param integer page 当前页码，不传或传nil则自动从http变量名中读取，变量名称配置文件配置
+-- @param integer page_size 一页多少条数据，不传或传nil则自动从分页配置中读取
+function _M.page(self, page, page_size)
+    page      = tonumber(page)
+    page_size = tonumber(page_size) or self:getOptions("page_size") -- 若未设置分页的一页大小，则从配置中读取
+
+    if "number" ~= type(page) or page_size <= 0 then
+        utils.exception("[parse error]Page method param type must be int or number string")
+    end
+
+    -- 计算偏移量
+    local offset = (page - 1) * page_size
+
+    -- 内部记录page方法设置的参数值
+    self.options.page  = {page, page_size}
+
+    -- 转换为limit对应语法
+    self.options.limit = offset .. ',' .. page_size
 
     return self
 end

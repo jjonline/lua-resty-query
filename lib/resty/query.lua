@@ -186,6 +186,25 @@ local function parseWhere(self)
     return " WHERE " .. where
 end
 
+-- 内部方法：解析data方法设置的数据
+-- @return string
+local function parseData(self)
+    local data = self:getOptions("data")
+
+    -- 循环处理关联数组成索引数组
+    if not utils.empty(data) then
+        local _data = {}
+
+        for key,val in pairs(data) do
+            table_insert(_data, key .. "=" .. val)
+        end
+
+        return _data
+    end
+
+    return {}
+end
+
 -- 解析join关联表
 -- @return string
 local function parseJoin(self)
@@ -293,8 +312,12 @@ end
 -- name方法隐含实例化过程，可直接 query:name(table_name)完成新query对象的生产
 -- @param string table 不带前缀的数据表名称
 function _M.name(self, table)
-    utils.dump(self:getConfig())
     return self:new():table(table)
+end
+
+-- 对象本身克隆，内部options等信息保留
+function _M.clone(self)
+    return utils.deep_copy(self)
 end
 
 -- 显式执行Db连接
@@ -339,35 +362,9 @@ function _M.rollback(self, ...)
     return self
 end
 
--- 依据action动作生成拟执行的sql语句
--- @param string action 拟执行的动作，枚举值：insert|select|find|update|delete
--- @return string
-function _M.buildSQL(self, action)
-
-    return self
-end
-
--- 执行单条数据新增
-function _M.insert(self, ...)
-
-    return self
-end
-
--- 执行单条数据新增并返回新增后的id
-function _M.insertGetId(self, ...)
-
-    return self
-end
-
--- 执行单条查询
-function _M.find(self, ...)
-
-    return self
-end
-
--- 执行多条查询
-function _M.select(self, ...)
-
+-- 构建select的sql语句
+-- @param string
+local function buildSelect(self)
     local sql = utils.str_replace(
             {
                 "#TABLE#",
@@ -396,15 +393,76 @@ function _M.select(self, ...)
             selectSQL
     )
 
-    utils.dump(utils.rtrim(sql))
+    return utils.rtrim(sql)
+end
+
+-- 构建update的sql语句
+-- @param string
+local function buildUpdate(self)
+    local sql = utils.str_replace(
+            {
+                "#TABLE#",
+                "#SET#",
+                "#JOIN#",
+                "#WHERE#",
+                "#ORDER#",
+                "#LIMIT#",
+                "#LOCK#"
+            },
+            {
+                parseTable(self),
+                utils.implode(" , ", parseData(self)),
+                parseJoin(self),
+                parseWhere(self),
+                parseOrder(self),
+                parseLimit(self),
+                parseLock(self),
+            },
+            -- "UPDATE #TABLE# SET #SET##JOIN##WHERE##ORDER##LIMIT# #LOCK#"
+            updateSQL
+    )
+
+    return utils.rtrim(sql)
+end
+
+-- 依据action动作生成拟执行的sql语句
+-- @param string action 拟执行的动作，枚举值：insert|select|find|update|delete
+-- @return string
+function _M.buildSQL(self, action)
+
     return self
+end
+
+-- 执行单条数据新增
+function _M.insert(self, ...)
+
+    return self
+end
+
+-- 执行单条数据新增并返回新增后的id
+function _M.insertGetId(self, ...)
+
+    return self
+end
+
+-- 执行单条查询
+function _M.find(self, ...)
+
+    return self
+end
+
+-- 执行多条查询
+function _M.select(self, ...)
+    local sql = buildSelect(self)
+    utils.dump(sql)
 end
 
 -- 执行分页查询
 -- @param integer page 当前页码，不传或传nil则自动从http变量名中读取，变量名称配置文件配置
 -- @param integer page_size 一页多少条数据，不传或传nil则自动从分页配置中读取
 -- @param boolean is_complex 是否复杂模式，不传则默认为简单模式 【复杂模式则返回值自动获取总记录数，简单模式则不获取总记录数】
-function _M.page(self, page, page_size, is_complex)
+-- @return array {list = {}, page = 1, total = 10}
+function _M.paginate(self, page, page_size, is_complex)
     utils.dump(page)
     utils.dump(page_size)
     utils.dump(utils.empty(is_complex))
@@ -413,8 +471,8 @@ end
 
 -- 执行更新操作
 function _M.update(self, ...)
-
-    return self
+    local sql = buildUpdate(self)
+    utils.dump(sql)
 end
 
 -- 执行删除操作
