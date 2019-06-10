@@ -94,6 +94,22 @@ local mt = { __index = _M }
     options.distinct = false;
 ]]--
 
+-- 内部option默认结构和默认值
+local options = {
+    table     = '',
+    field     = {},
+    where     = { AND = {}, OR  = {}, },
+    join      = {},
+    order     = {},
+    limit     = '',
+    data      = {},
+    page      = {},
+    group     = '',
+    having    = '',
+    distinct  = false,
+    lock      = '',
+}
+
 -- 数据库配置，多个实例可共用
 local config  = {
     host      = "127.0.0.1",
@@ -108,24 +124,6 @@ local config  = {
     engine    = nil,
     page_size = 10, -- 分页读取时1页条数
 }
---[[
--- 内部option结构示例
-local options = {
-    table  = '',
-    field  = {},
-    where  = {
-        AND = {},
-        OR  = {},
-    },
-    join      = {},
-    order     = {},
-    limit     = '',
-    group     = '',
-    having    = '',
-    distinct  = false,
-    lock      = '',
-}
-]]--
 
 -- 构造器内部分析处理表名称的方法
 -- @param string table_name 参数形式：no_prefix_table|no_prefix_table as table_alias
@@ -229,6 +227,40 @@ local function _getOptions(self, option)
     return self.options
 end
 _M.getOptions = _getOptions
+
+--- 设置builder内部构造器选项项目table【外部直接调用有风险，务必清楚你调用该方法的目的，内部options结构参照上方局部变量options】
+--- @param string option 内部构造器选项名称
+--- @param mixed  value  内部构造器值
+--- @return mixed
+local function _setOptions(self, option, value)
+    -- 检查是否存在内部配置项名称后直接赋值，不做任何检查
+    if nil ~= options[option] then
+        self.options[option] = value
+    end
+
+    -- 返回数组
+    return self
+end
+_M.setOptions = _setOptions
+
+--- 清理内部options设置项【外部直接调用有风险，务必清楚你调用该方法的目的，内部options结构参照上方局部变量options】
+--- @param string option 可选内部构造器选项名称，不传你则清理所有
+--- @return mixed
+local function _removeOptions(self, option)
+    -- 如果未传参option则表示清理所有内部option
+    -- 如果有传参option则检查该option是否为内部的key后单独清理该1个option
+    if nil == option then
+        self.options = options -- 直接内部默认选项结构覆盖，清理全部已设置的option选项
+    else
+        -- 存在该内部选项值，则只清理该一项，不存在该key时避免混乱不做任何动作
+        if nil ~= options[option] then
+            self.options[option] = options[option]
+        end
+    end
+
+    return self
+end
+_M.removeOptions = _removeOptions
 
 -- new语法构造新对象
 function _M.new(self, _config)

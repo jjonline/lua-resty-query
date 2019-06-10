@@ -3,22 +3,25 @@
 ---
 
 ----------------------------------------------------------------
---- 实现后的用法如下：
+--- 用法如下：
 ---
 --- <引入query类>
 --- local query = require "resty.query"
 ---
 --- `实例化`query类产生1个类实例，参数为数组结构的配置
---- local table_query = query(config)
+--- local table_query = query:new(config)
+--- local table_query = query:name(table)
 ---
 --- 查询单条数据用法：
 ---     local one_result = table_query:where({where}):find()
 --- 查询多条数据用法：
 ---     local list_result = table_query:where({where}):select()
 --- 分页查询数据用法：
----     local page_result = table_query:where({where}):page(now_page, page_limit, is_complex)
+---     local page_result = table_query:where({where}):page(offset, page_size):select()
+---     local page_result = table_query:where({where}):paginate(page, page_size, is_complex)
 --- 更新数据用法：
----     local update_result = table_query:where({where}):update() -- 为避免整个表更新，where为空时不执行，且报告异常
+---     local update_result = table_query:where({where}):data({data}):update() -- 为避免整个表更新，where为空时不执行，且报告异常
+---     local update_result = table_query:where({where}):update({data}) -- 为避免整个表更新，where为空时不执行，且报告异常
 --- 删除数据用法：
 ---     local delete_result = table_query:where({where}):delete() -- 为避免整个表删除，where为空时不执行，且报告异常
 --- 新增单条数据用法：
@@ -47,10 +50,10 @@ local options = {
 }
 ]]--
 
-local selectSQL = "SELECT#DISTINCT# #FIELD# FROM #TABLE##JOIN##WHERE##GROUP##HAVING##ORDER##LIMIT##LOCK#"
-local insertSQL = "#INSERT# INTO #TABLE# (#FIELD#) VALUES (#DATA#)"
-local updateSQL = "UPDATE #TABLE# SET #SET##JOIN##WHERE##ORDER##LIMIT# #LOCK#"
-local deleteSQL = "DELETE FROM #TABLE##USING##JOIN##WHERE##ORDER##LIMIT# #LOCK#"
+local selectSQL    = "SELECT#DISTINCT# #FIELD# FROM #TABLE##JOIN##WHERE##GROUP##HAVING##ORDER##LIMIT##LOCK#"
+local insertSQL    = "#INSERT# INTO #TABLE# (#FIELD#) VALUES (#DATA#)"
+local updateSQL    = "UPDATE #TABLE# SET #SET##JOIN##WHERE##ORDER##LIMIT# #LOCK#"
+local deleteSQL    = "DELETE FROM #TABLE##USING##JOIN##WHERE##ORDER##LIMIT# #LOCK#"
 local insertAllSQL = "#INSERT# INTO #TABLE# (#FIELD#) #DATA#"
 
 -- 内部方法：解析是否distinct唯一
@@ -418,8 +421,49 @@ local function buildUpdate(self)
                 parseLimit(self),
                 parseLock(self),
             },
-            -- "UPDATE #TABLE# SET #SET##JOIN##WHERE##ORDER##LIMIT# #LOCK#"
             updateSQL
+    )
+
+    return utils.rtrim(sql)
+end
+
+-- 构建insert的sql语句
+-- @param string
+local function buildInsert(self, is_replace)
+    -- 获取要新增的数据
+    local data = self:getOptions("data")
+
+    -- 没有数据集对象
+    if utils.empty(data) then
+        utils.exception("please set insert data first")
+    end
+
+    -- 依据replace条件调度新增语句的方式
+    if is_replace then
+        is_replace = "REPLACE"
+    else
+        is_replace = "INSERT"
+    end
+
+    -- 处理键值对
+    local fields = utils.array_keys(data)
+    local values = utils.array_values(data)
+
+    local sql = utils.str_replace(
+            {
+                "#INSERT#",
+                "#TABLE#",
+                "#FIELD#",
+                "#DATA#"
+            },
+            {
+                is_replace,
+                parseTable(self),
+                utils.implode(" , ", fields),
+                utils.implode(" , ", values)
+            },
+            -- #INSERT# INTO #TABLE# (#FIELD#) VALUES (#DATA#)
+            insertSQL
     )
 
     return utils.rtrim(sql)
@@ -434,25 +478,47 @@ function _M.buildSQL(self, action)
 end
 
 -- 执行单条数据新增
-function _M.insert(self, ...)
+-- @param array   data 可以通过insert第一个参数设置要信息的key-value值对象，会覆盖由data设置的值
+-- @param boolean is_replace 是否使用REPLACE语句执行新增，默认否
+-- @return boolean 执行成功返回true，执行失败返回false
+function _M.insert(self, data, is_replace)
+    -- insert第一个参数传入要insert的键值对，执行设置data
+    if "table" == type(data) then
+        self:data(data)
+    end
 
-    return self
+    local sql = buildInsert(self, is_replace)
+
+    utils.dump(sql)
 end
 
 -- 执行单条数据新增并返回新增后的id
-function _M.insertGetId(self, ...)
+-- @param array   data 可以通过insert第一个参数设置要信息的key-value值对象，会覆盖由data设置的值
+-- @param boolean is_replace 是否使用REPLACE语句执行新增，默认否
+-- @return number|string|boolean 执行成功返回新增的主键id，执行失败返回false
+function _M.insertGetId(self, data, is_replace)
 
     return self
 end
 
--- 执行单条查询
-function _M.find(self, ...)
+-- 执行单条查询，find不支持通过参数设置查询条件，仅支持通过where方法设置
+-- @return array|nil 查找到返回一维数组，查找不到返回nil
+function _M.find(self)
+    -- 查找1条，强制覆盖limit条件为1条
+    self:setOptions("limit", 1);
 
-    return self
+    -- 生成查找1条的sql
+    local sql = buildSelect(self)
+
+    -- 清理方法体强制设置的limit条件
+    self:removeOptions("limit")
+
+    utils.dump(sql)
 end
 
--- 执行多条查询
-function _M.select(self, ...)
+-- 执行多条查询，select支持通过参数设置查询条件，仅支持通过where方法设置
+-- @return array|nil 查找到返回二维数组，查找不到返回nil
+function _M.select(self)
     local sql = buildSelect(self)
     utils.dump(sql)
 end

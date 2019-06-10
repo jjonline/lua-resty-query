@@ -262,8 +262,8 @@ local function cold_copy(orig)
 end
 
 -- 合并两个数组
--- @param array   arr1 原始数组
--- @param array   arr2 新变量类型数组
+-- @param array arr1 原始数组
+-- @param array arr2 新变量类型数组
 -- @return array|false
 local function array_merge(arr1, arr2)
     if "table" ~= type(arr1) or "table" ~= type(arr2) then
@@ -278,6 +278,40 @@ local function array_merge(arr1, arr2)
     end
 
     return arr1
+end
+
+-- 获取一个数组的所有key构成的数组
+-- @param array array 原始数组
+-- @return array|false
+local function array_keys(array)
+    if "table" == type(array) then
+        local result = {}
+
+        for key,_ in pairs(array) do
+            table_insert(result, key)
+        end
+
+        return result
+    end
+
+    return false
+end
+
+-- 获取一个数组的所有value构成的数组
+-- @param array array 原始数组
+-- @return array|false
+local function array_values(array)
+    if "table" == type(array) then
+        local result = {}
+
+        for _,value in pairs(array) do
+            table_insert(result, value)
+        end
+
+        return result
+    end
+
+    return false
 end
 
 -- 检查1个table是否为数组，即数字索引的table
@@ -400,6 +434,8 @@ return {
     deep_copy        = deep_copy,
     cold_copy        = cold_copy,
     array_merge      = array_merge,
+    array_keys       = array_keys,
+    array_values     = array_values,
     table_is_array   = table_is_array,
     in_array         = in_array,
     quote_value      = quote_value,

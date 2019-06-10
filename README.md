@@ -47,7 +47,7 @@ config结构
 
 # field 方法
 
-功能：设置查询操作的字段
+功能：设置操作的字段
 
 用法：
 
@@ -118,7 +118,7 @@ config结构
 
 函数回调参数形式
 
-* `where(callback)` 其中`callback`是一个函数，参数为一个`where`对象
+* `where(callback)` 其中`callback`是一个函数，参数为一个`query`对象
 
 ````
 where(function (query) 
@@ -129,14 +129,6 @@ end)
 ````
 构造的sql为：`(id=1 OR cid=2) AND (id= 3 OR name LIKE '%晶晶%')`
 
-# data 方法
-
-功能：设置数据方法，用于insert新增或update更新数据的设置
-
-用法：
-
-* `data('id', 1)` 字段与值的设置方式，两个参数
-* `order({id = 1, name = "晶晶""})` 数组形式设置多个键值对，一个参数
 
 # order 方法
 
@@ -215,3 +207,47 @@ end)
 
 * `lock(true)` 加入`FOR UPDATE`锁
 * `lock('lock in share mode')` 字符串用于一些特殊的锁定要求
+
+# data 方法
+
+功能：设置数据方法，用于insert新增或update更新数据的设置
+
+用法：
+
+* `data('id', 1)` 字段与值的设置方式，两个参数
+* `order({id = 1, name = "晶晶""})` 数组形式设置多个键值对，一个参数
+
+# select 方法
+
+功能：执行select批量查询
+
+用法：
+
+* `select()` 执行select查询，select方法不支持任何参数
+
+# find 方法
+
+功能：执行select单条数据查询
+
+用法：
+
+* `find()` 执行select查询，find方法不支持任何参数
+
+# update 方法
+
+功能：执行update更新数据操作
+
+用法：
+
+* `update()` 通过`data`设置要更新的键值对，通过where系列方法设置更新条件
+* `update(data)` 通过参数设置要更新的键值对，会覆盖由`data`方法设置的值
+
+# insert 方法
+
+功能：执行insert方法新增1条数据
+
+用法：
+
+* `insert()` 通过`data`设置要新增的键值对
+* `insert(data)` 通过参数设置要新增的键值对，会覆盖由`data`方法设置的值
+* `insert(data, true)` 通过第二个参数给予true，使用`REPLACE`语法执行新增，若不想通过第一个参数赋值，给予一个空数组`{}`即可
