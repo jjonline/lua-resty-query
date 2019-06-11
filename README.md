@@ -1,6 +1,6 @@
 # new方法
 
-功能：设置需要操作的数据表
+功能：实例化一个query对象
 
 用法：
 
@@ -215,7 +215,7 @@ end)
 用法：
 
 * `data('id', 1)` 字段与值的设置方式，两个参数
-* `order({id = 1, name = "晶晶""})` 数组形式设置多个键值对，一个参数
+* `data({id = 1, name = "晶晶""})` 数组形式设置多个键值对，一个参数
 
 # select 方法
 
@@ -251,3 +251,19 @@ end)
 * `insert()` 通过`data`设置要新增的键值对
 * `insert(data)` 通过参数设置要新增的键值对，会覆盖由`data`方法设置的值
 * `insert(data, true)` 通过第二个参数给予true，使用`REPLACE`语法执行新增，若不想通过第一个参数赋值，给予一个空数组`{}`即可
+
+
+# insertGetId 方法
+
+功能：执行insert方法新增1条数据并返回新增数据的主键id
+
+说明：`insertGetId` 为insert的升级方法，insert方法返回布尔值，`insertGetId`执行insert数据成功后返回新增数据的主键id，参数与insert相同，仅返回值有差异。
+
+
+# delete 方法
+
+功能：执行delete语句删除数据
+
+用法：
+
+* `delete()` 执行delete语句删除数据，delete方法不支持任何参数，必须通过where设置条件

@@ -18,9 +18,6 @@ local mt = { __index = _M }
 --[[
     options = {}
 
-    -- 表名称前缀
-    options.table_prefix = 'table_prefix_'
-
     -- 查询字段名称
     options.field = {
         'table.column1',
@@ -98,7 +95,8 @@ local mt = { __index = _M }
 local options = {
     table     = '',
     field     = {},
-    where     = { AND = {}, OR  = {}, },
+    using     = {},
+    where     = { AND = {}, OR  = {} },
     join      = {},
     order     = {},
     limit     = '',
@@ -107,7 +105,7 @@ local options = {
     group     = '',
     having    = '',
     distinct  = false,
-    lock      = '',
+    lock      = ''
 }
 
 -- 数据库配置，多个实例可共用
@@ -278,7 +276,7 @@ function _M.new(self, _config)
         options = {
             table     = '',
             field     = {},
-            where     = { AND = {}, OR  = {}, },
+            where     = { AND = {}, OR  = {} },
             join      = {},
             order     = {},
             limit     = '',
@@ -287,7 +285,7 @@ function _M.new(self, _config)
             group     = '',
             having    = '',
             distinct  = false,
-            lock      = '',
+            lock      = ''
         }
     }
 

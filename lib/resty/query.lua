@@ -53,7 +53,7 @@ local options = {
 local selectSQL    = "SELECT#DISTINCT# #FIELD# FROM #TABLE##JOIN##WHERE##GROUP##HAVING##ORDER##LIMIT##LOCK#"
 local insertSQL    = "#INSERT# INTO #TABLE# (#FIELD#) VALUES (#DATA#)"
 local updateSQL    = "UPDATE #TABLE# SET #SET##JOIN##WHERE##ORDER##LIMIT# #LOCK#"
-local deleteSQL    = "DELETE FROM #TABLE##USING##JOIN##WHERE##ORDER##LIMIT# #LOCK#"
+local deleteSQL    = "DELETE FROM #TABLE##JOIN##WHERE##ORDER##LIMIT# #LOCK#"
 local insertAllSQL = "#INSERT# INTO #TABLE# (#FIELD#) #DATA#"
 
 -- 内部方法：解析是否distinct唯一
@@ -132,6 +132,11 @@ end
 local function buildWhere(this)
     local where_str = ''
     local where     = this:getOptions("where")
+
+    -- 未曾设置任何where条件返回空字符串
+    if utils.empty(where) then
+        return ""
+    end
 
     -- 循环处理条件
     for logic,list in pairs(where) do
@@ -402,6 +407,13 @@ end
 -- 构建update的sql语句
 -- @param string
 local function buildUpdate(self)
+    -- 未设置where条件，不允许执行
+    local where = self:getOptions("where")
+    if utils.empty(where.OR) and utils.empty(where.AND) then
+        utils.exception("execute update SQL must be set where condition")
+        return false
+    end
+
     local sql = utils.str_replace(
             {
                 "#TABLE#",
@@ -469,6 +481,39 @@ local function buildInsert(self, is_replace)
     return utils.rtrim(sql)
 end
 
+-- 构建delete的sql语句
+-- @param string
+local function buildDelete(self)
+    -- 未设置where条件，不允许执行
+    local where = self:getOptions("where")
+    if utils.empty(where.OR) and utils.empty(where.AND) then
+        utils.exception("execute delete SQL must be set where condition")
+        return false
+    end
+
+    local sql = utils.str_replace(
+            {
+                "#TABLE#",
+                "#JOIN#",
+                "#WHERE#",
+                "#ORDER#",
+                "#LIMIT#",
+                "#LOCK#"
+            },
+            {
+                parseTable(self),
+                parseJoin(self),
+                parseWhere(self),
+                parseOrder(self),
+                parseLimit(self),
+                parseLock(self),
+            },
+            deleteSQL
+    )
+
+    return utils.rtrim(sql)
+end
+
 -- 依据action动作生成拟执行的sql语句
 -- @param string action 拟执行的动作，枚举值：insert|select|find|update|delete
 -- @return string
@@ -497,8 +542,14 @@ end
 -- @param boolean is_replace 是否使用REPLACE语句执行新增，默认否
 -- @return number|string|boolean 执行成功返回新增的主键id，执行失败返回false
 function _M.insertGetId(self, data, is_replace)
+    -- insert第一个参数传入要insert的键值对，执行设置data
+    if "table" == type(data) then
+        self:data(data)
+    end
 
-    return self
+    local sql = buildInsert(self, is_replace)
+
+    utils.dump(sql)
 end
 
 -- 执行单条查询，find不支持通过参数设置查询条件，仅支持通过where方法设置
@@ -542,23 +593,23 @@ function _M.update(self, ...)
 end
 
 -- 执行删除操作
-function _M.delete(self, ...)
-
-    return self
+function _M.delete(self)
+    local sql = buildDelete(self)
+    utils.dump(sql)
 end
 
 -- 执行原生sql的查询--select
--- @param string SQL语句
--- @param array  可选的参数绑定，SQL语句中的问号(?)依次使用该数组参数替换
-function _M.query(self, ...)
+-- @param string sql   SQL语句
+-- @param array  binds 可选的参数绑定，SQL语句中的问号(?)依次使用该数组参数替换
+function _M.query(self, sql, binds)
 
     return self
 end
 
 -- 执行原生sql的命令--update、delete、create、alter等
--- @param string SQL语句
--- @param array  可选的参数绑定，SQL语句中的问号(?)依次使用该数组参数替换
-function _M.execute(self, ...)
+-- @param string sql   SQL语句
+-- @param array  binds 可选的参数绑定，SQL语句中的问号(?)依次使用该数组参数替换
+function _M.execute(self, sql, binds)
 
     -- 返回影响行数
     return self
