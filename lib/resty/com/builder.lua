@@ -95,7 +95,6 @@ local mt = { __index = _M }
 local options = {
     table     = '',
     field     = {},
-    using     = {},
     where     = { AND = {}, OR  = {} },
     join      = {},
     order     = {},

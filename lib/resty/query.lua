@@ -36,6 +36,7 @@ local pcall        = pcall
 local table_insert = table.insert
 local string_sub   = string.sub
 local string_len   = string.len
+local string_upper = string.upper
 local setmetatable = setmetatable
 local getmetatable = getmetatable
 local utils        = require "resty.com.utils"
@@ -517,9 +518,25 @@ end
 -- 依据action动作生成拟执行的sql语句
 -- @param string action 拟执行的动作，枚举值：insert|select|find|update|delete
 -- @return string
-function _M.buildSQL(self, action)
+function _M.buildSql(self, action)
+    local _action = string_upper(action)
+    local sql
 
-    return self
+    if "SELECT" == _action then
+        sql = buildSelect(self)
+    elseif "FIND" == _action then
+        self:limit(1)
+        sql = buildSelect(self)
+        self:removeOptions("limit")
+    elseif "UPDATE" == _action then
+        sql = buildUpdate(self)
+    elseif "INSERT" == _action then
+        sql = buildInsert(self)
+    elseif "DELETE" == _action then
+        sql = buildDelete(self)
+    end
+
+    return sql
 end
 
 -- 执行单条数据新增

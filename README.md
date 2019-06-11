@@ -267,3 +267,13 @@ end)
 用法：
 
 * `delete()` 执行delete语句删除数据，delete方法不支持任何参数，必须通过where设置条件
+
+# buildSql 方法
+
+功能：开发调试，用于生成拟执行的SQL语句
+
+用法：
+
+* `buildSql(action)` 
+
+> 其中action为如下枚举值中的某一个：`insert`、`select`、`find`、`update`、`delete`，不区分大小写
