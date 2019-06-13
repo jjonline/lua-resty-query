@@ -111,6 +111,7 @@ local options = {
 local config  = {
     host      = "127.0.0.1",
     port      = 3306,
+    socket    = "",
     database  = "",
     username  = "",
     password  = "",
@@ -120,6 +121,8 @@ local config  = {
     strict    = true,
     engine    = nil,
     page_size = 10, -- 分页读取时1页条数
+    pool_size = 10, -- socket层连接池数量
+    pool_timeout = 10000, -- 连接池idle的超时时长，单位毫秒
 }
 
 -- 构造器内部分析处理表名称的方法

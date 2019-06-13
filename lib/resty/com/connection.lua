@@ -5,36 +5,197 @@
 local mysql = require "resty.mysql"
 local utils = require "resty.com.utils"
 
-local connection = {}
+local _M = {}
+local mt = { __index = _M }
 
--- 支持断线重连的建立连接，内部可支持连接池
-connection.connect = function() end
+-- 标记连接状态
+local CONNECTED = 1 -- 已连接
+local DISCONNECTED = 0 -- 已断开
 
--- 断开连接
-connection.close = function() end
+-- 标记是否使用unix socket
+local use_socket = false
 
--- 执行查询类型sql
-connection.query = function() end
+-- db配置
+local config = {
+    -- host            = "127.0.0.1",
+    -- port            = 3306,
+    -- path            = "",
+    database        = "",
+    user            = "",
+    password        = "",
+    charset         = "",
+    compact_arrays  = false,
+    max_packet_size = 1024 * 1024,
+}
+
+-- db连接池相关配置
+local pool_config = {
+    pool_size = 10,
+    pool_timeout = 10000 -- ms
+}
+
+-- 设置配置
+local function _config(_, config_set)
+    if utils.empty(config_set) then
+        utils.exception("please set MySQL config")
+    end
+
+    -- db连接池相关配置
+    if not utils.empty(config_set.pool_size) then
+        pool_config.pool_size = config_set.pool_size
+    end
+    if not utils.empty(config_set.pool_timeout) then
+        pool_config.pool_timeout = config_set.pool_timeout
+    end
+
+    -- db\user\pwd
+    config.database = config_set.database
+    config.user     = config_set.username
+    config.password = config_set.password
+    config.charset  = config_set.charset
+
+    -- 检查主机连接协议自动配置连接参数
+    if not utils.empty(config_set.socket) then
+        use_socket  = true
+        config.path = config_set.socket
+    else
+        config.host = config_set.host
+        config.port = config_set.port
+    end
+end
+_M.config = _config
+
+-- 内部方法：初始化resty.mysql
+-- 惰性连接，只有执行sql时才真正执行连接过程
+local function _init(self, config_set)
+    -- 若传递有配置参数，则调用
+    if not utils.empty(config_set) then
+        self:config(config_set)
+    end
+
+    -- lua-resty-mysql建立实例和连接
+    local instance, err = mysql:new()
+    if not instance then
+        utils.exception("failed to instantiate mysql: " .. err)
+        return nil
+    end
+
+    instance:set_timeout(1000) -- 3 sec
+
+    -- 返回初始化并建立好连接的resty.mysql对象
+    return instance
+end
+
+-- 内部方法：执行resty.mysql真正建立连接过程
+local function _connect(self)
+    -- 已建立过连接
+    if self.state == CONNECTED then
+        return
+    end
+
+    --- 执行连接并检查
+    local ok, error, code, state = self.instance:connect(config)
+    if not ok then
+        utils.exception("failed to connect: " .. error)
+        self.state = DISCONNECTED
+        return
+    end
+
+    -- 标记已连接
+    self.state = CONNECTED
+end
+
+-- 实例化connection
+-- @param array _config 可选的链接参数
+-- @return DB instance
+function _M.new(self, config_set)
+    local instance = _init(self, config_set)
+    local _self = {
+        state          = DISCONNECTED, -- new出的对象并未建立起连接，只有一个resty.mysql对象
+        instance       = instance, -- resty.mysql对象，是否已执行连接，由state标记
+        in_transaction = false, -- 内部标记是否处于事务中
+    }
+
+    return setmetatable(_self, mt)
+end
+
+-- 建立连接，方法体内部会检查是否已建立过连接
+-- @param array _config 可选的链接配置参数
+-- @return DB instance
+function _M.connect(self, config_set)
+    -- 传递有配置参数则设置配置参数
+    if not utils.empty(config_set) then
+        self:config(config_set)
+    end
+
+    -- 智能执行连接
+    _connect(self)
+
+    return self
+end
+
+-- 执行查询类型sql，没有返回值
+-- @param string sql 执行的sql语句
+function _M.query(self, sql)
+    -- 智能执行连接
+    self:connect()
+    local byte,err = self.instance:send_query(sql)
+
+    if utils.empty(byte) then
+        utils.exception(err)
+    end
+end
 
 -- 执行操作类型sql，应当返回受影响的行数
-connection.execute = function() end
+function _M.execute(self, sql) end
 
--- 结果集返回下一行
-connection.fetch = function() end
+-- 逐行返回结果集，调用方需迭代
+-- @return array
+function _M.fetch(self)
+    -- 迭代器，调用方需迭代获取所有结果
+    local res, err, code, sqlstate = self.instance:read_result()
+
+    -- 如果没有结果集则终止迭代
+    if res then
+        return res
+    end
+
+    return nil
+end
 
 -- 返回所有结果集
-connection.fetchAll = function() end
+function _M.fetchAll(self) end
+
+-- 返回受影响行数
+function _M.effectRows(self) end
 
 -- 返回最后插入行的ID或序列值
-connection.lastInertId = function() end
+function _M.lastInertId() end
 
 -- 开始一个事务
-connection.beginTransaction = function() end
+function _M.beginTransaction(self) end
 
 -- 回滚一个事务
-connection.rollback = function() end
+function _M.rollback(self) end
 
 -- 提交一个事务
-connection.commit = function() end
+function _M.commit(self) end
 
-return connection
+-- 析构方法：不要求调用方显示执行close和维护连接池
+-- 调用方在业务完成之后显式调用析构方法即可
+function _M.destruct(self)
+    if self.state == CONNECTED then
+        -- 析构方法，将底层socket加入连接池，无需显式执行close
+        local ok, err = self.instance:set_keepalive(pool_config.pool_timeout, pool_config.pool_size)
+        if ok then
+            self.state = DISCONNECTED
+        else
+            utils.exception(err)
+            return false
+        end
+        return true;
+    end
+    return true
+end
+
+return _M

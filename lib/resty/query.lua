@@ -305,11 +305,27 @@ local mt = { __index = _M }
 function _M.new(_, config)
     local build    = builder:new(config)
     local super_mt = getmetatable(build)
-    -- 当方法在子类中查询不到时，再去父类中去查找。
+
+    -- 当方法在子类中查询不到时，可以再去父类中去查找。
     setmetatable(_M, super_mt)
+
     -- 这样设置后，可以通过self.super.method(self, ...) 调用父类的已被覆盖的方法。
     build.super = setmetatable({}, super_mt)
+
+    -- 底层db连接管理器
+    build.connection = connection:new(config)
+
     return setmetatable(build, mt)
+end
+
+-- 显式执行Db连接
+function _M.connect(self, config)
+    -- 判断是否已连接
+    if utils.empty(self.connection.state) then
+        self.connection:connect(config)
+    end
+
+    return self
 end
 
 -- 内部debug调试方法
@@ -327,14 +343,6 @@ end
 -- 对象本身克隆，内部options等信息保留
 function _M.clone(self)
     return utils.deep_copy(self)
-end
-
--- 显式执行Db连接
-function _M.connect(self, ...)
-
-    -- 与db建立tcp连接，支持断线重连
-
-    return self
 end
 
 -- 显式执行Db关闭连接
@@ -588,7 +596,15 @@ end
 -- @return array|nil 查找到返回二维数组，查找不到返回nil
 function _M.select(self)
     local sql = buildSelect(self)
-    utils.dump(sql)
+
+    -- execute
+    self.connection:query(sql)
+
+    -- fetch result
+    for i,v in self.connection.fetch,self.connection do
+        utils.dump(i)
+        utils.dump(v)
+    end
 end
 
 -- 执行分页查询

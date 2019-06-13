@@ -85,7 +85,7 @@ end
 
 -- 检查变量是否为空
 local function empty(value)
-    if value == nil or value == '' or value == false then
+    if value == nil or value == '' or value == false or value == 0 or value == '0' then
         return true
     elseif "table" == type(value) then
         return next(value) == nil

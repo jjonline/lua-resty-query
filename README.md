@@ -14,6 +14,7 @@ config结构
 {
     host      = "127.0.0.1",
     port      = 3306,
+    socket    = "",
     database  = "",
     username  = "",
     password  = "",
@@ -23,6 +24,8 @@ config结构
     strict    = true,
     engine    = nil,
     page_size = 10,
+    pool_size = 10,
+    pool_timeout = 10000,
 }
 ````
 
