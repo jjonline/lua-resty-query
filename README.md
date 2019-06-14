@@ -228,6 +228,16 @@ end)
 
 * `select()` 执行select查询，select方法不支持任何参数
 
+# paginate 方法
+
+功能：分页查询数据列表
+
+用法：
+
+* `paginate(page, page_size, is_complex)` 获取1页最多包含`page_size`条的第`page`页数据，如果`is_complex`为true即复杂模式，则一并返回该查询的总记录数
+
+> 3个参数均为可选参数，page默认值为1即默认查询第一页，page_size可通过配置方式设置后此处省略，is_complex模式默认为false即简单模式，查询结果不包含总数
+
 # find 方法
 
 功能：执行select单条数据查询
@@ -280,3 +290,11 @@ end)
 * `buildSql(action)` 
 
 > 其中action为如下枚举值中的某一个：`insert`、`select`、`find`、`update`、`delete`，不区分大小写
+
+# getLastSql 方法
+
+功能：开发调试，用于返回调用位置处最后一次执行的SQL语句
+
+用法：
+
+* `getLastSql()` 获取最后执行的sql语句

@@ -139,6 +139,7 @@ end
 function _M.query(self, sql)
     -- 智能执行连接
     self:connect()
+    -- 返回发送给mysql的字节数，出错则nil,err字符串描述内容
     local byte,err = self.instance:send_query(sql)
 
     if utils.empty(byte) then
@@ -146,31 +147,120 @@ function _M.query(self, sql)
     end
 end
 
--- 执行操作类型sql，应当返回受影响的行数
-function _M.execute(self, sql) end
-
--- 逐行返回结果集，调用方需迭代
+-- 迭代返回结果集，调用方需迭代
 -- @return array
 function _M.fetch(self)
-    -- 迭代器，调用方需迭代获取所有结果
+    -- read
     local res, err, code, sqlstate = self.instance:read_result()
 
     -- 如果没有结果集则终止迭代
-    if res then
-        return res
+    if nil ~= res then
+        return res -- array，可能是空数组
+    end
+
+    -- 如果是sql错误，则记录错误日志
+    if nil ~= code then
+        if utils.empty(sqlstate) then
+            sqlstate = ''
+        else
+            sqlstate = "[" .. sqlstate .. "]"
+        end
+        utils.logger(code .. "- " .. sqlstate .. err)
     end
 
     return nil
 end
 
--- 返回所有结果集
-function _M.fetchAll(self) end
+-- fetch方法返回的迭代器，多条分号分隔的sql多结果集迭代获取
+local function fetchIterator(self, index)
+    index = index + 1
+
+    -- 迭代器，调用方需迭代获取所有结果
+    local res, err, code, sqlstate = self.instance:read_result()
+
+    -- 如果没有结果集则终止迭代
+    if res then
+        return index, res
+    end
+
+    -- 如果是sql错误，则记录错误日志
+    if code ~= nil then
+        if utils.empty(sqlstate) then
+            sqlstate = ''
+        else
+            sqlstate = "[" .. sqlstate .. "]"
+        end
+        utils.logger(code .. "-" .. sqlstate .. err)
+    end
+
+    return nil
+end
+
+-- 如果有多条sql同时被发送，则需要迭代获取结果集
+function _M.fetchMany(self)
+    return fetchIterator, self, 0;
+end
+
+-- 执行查询类型sql，没有返回值，使用effectRows或lastInertId获取返回值
+-- @param string sql 执行的sql语句
+function _M.execute(self, sql)
+    -- 智能执行连接
+    self:connect()
+    -- 返回发送给mysql的字节数，出错则nil,err字符串描述内容
+    local byte,err = self.instance:send_query(sql)
+
+    if utils.empty(byte) then
+        utils.exception(err)
+    end
+end
 
 -- 返回受影响行数
-function _M.effectRows(self) end
+-- @return number|nil 执行成功返回影响行数，执行失败返回nil[可能影响行数为0，注意判断的逻辑合理性]
+function _M.affectedRows(self)
+    -- read
+    local res, err, code, sqlstate = self.instance:read_result()
+
+    -- 如果没有结果集则终止迭代
+    if nil ~= res then
+        return res.affected_rows or nil -- 返回影响行数或nil
+    end
+
+    -- 如果是sql错误，则记录错误日志
+    if nil ~= code then
+        if utils.empty(sqlstate) then
+            sqlstate = ''
+        else
+            sqlstate = "[" .. sqlstate .. "]"
+        end
+        utils.logger(code .. "-" .. sqlstate .. err)
+    end
+
+    return nil
+end
 
 -- 返回最后插入行的ID或序列值
-function _M.lastInertId() end
+-- @return number|nil 返回新增id或失败nil
+function _M.lastInertId(self)
+    -- read
+    local res, err, code, sqlstate = self.instance:read_result()
+
+    -- 如果没有结果集则终止迭代
+    if nil ~= res then
+        return res.insert_id or nil -- 新增的id或nil
+    end
+
+    -- 如果是sql错误，则记录错误日志
+    if nil ~= code then
+        if utils.empty(sqlstate) then
+            sqlstate = ''
+        else
+            sqlstate = "[" .. sqlstate .. "]"
+        end
+        utils.logger(code .. "-" .. sqlstate .. err)
+    end
+
+    return nil
+end
 
 -- 开始一个事务
 function _M.beginTransaction(self) end

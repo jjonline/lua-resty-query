@@ -299,6 +299,7 @@ end
 
 local _M = {}
 local mt = { __index = _M }
+local LAST_SQL = 'none'
 
 -- 初始化方法，类似构造函数
 -- @param array config 初始化传入配置数组参数，数组结构参照上方 options.config
@@ -351,8 +352,8 @@ function _M.close(self, ...)
 end
 
 -- 获取底层connection对象
-function _M.getConnection(self, ...)
-    return self
+function _M.getConnection(self)
+    return self.connection
 end
 
 -- 闭包方法内执行事务
@@ -377,6 +378,16 @@ end
 function _M.rollback(self, ...)
 
     return self
+end
+
+-- 设置最近1次执行过的sql，全局模式
+local function set_last_sql(sql)
+    LAST_SQL = sql
+end
+
+-- 获取最近1次执行过的sql，全局模式
+local function get_last_sql()
+    return LAST_SQL
 end
 
 -- 构建select的sql语句
@@ -487,6 +498,9 @@ local function buildInsert(self, is_replace)
             insertSQL
     )
 
+    -- 记录最近一次执行过的sql
+    set_last_sql(sql)
+
     return utils.rtrim(sql)
 end
 
@@ -520,6 +534,9 @@ local function buildDelete(self)
             deleteSQL
     )
 
+    -- 记录最近一次执行过的sql
+    set_last_sql(sql)
+
     return utils.rtrim(sql)
 end
 
@@ -547,6 +564,11 @@ function _M.buildSql(self, action)
     return sql
 end
 
+-- 获取最近执行过的最后1次的sql
+function _M.getLastSql(self)
+    return get_last_sql()
+end
+
 -- 执行单条数据新增
 -- @param array   data 可以通过insert第一个参数设置要信息的key-value值对象，会覆盖由data设置的值
 -- @param boolean is_replace 是否使用REPLACE语句执行新增，默认否
@@ -557,9 +579,22 @@ function _M.insert(self, data, is_replace)
         self:data(data)
     end
 
+    -- build insert sql
     local sql = buildInsert(self, is_replace)
 
-    utils.dump(sql)
+    -- send sql to MySQL server and execute
+    self.connection:execute(sql)
+
+    -- remove all setOptions
+    self:removeOptions();
+
+    -- self.connection:destruct()
+
+    -- record last SQL
+    set_last_sql(sql)
+
+    -- fetch MySQL server execute result info
+    return self.connection:affectedRows()
 end
 
 -- 执行单条数据新增并返回新增后的id
@@ -572,9 +607,22 @@ function _M.insertGetId(self, data, is_replace)
         self:data(data)
     end
 
+    -- build insert sql
     local sql = buildInsert(self, is_replace)
 
-    utils.dump(sql)
+    -- send sql to MySQL server and execute
+    self.connection:execute(sql)
+
+    -- remove all setOptions
+    self:removeOptions();
+
+    -- self.connection:destruct()
+
+    -- record last SQL
+    set_last_sql(sql)
+
+    -- fetch MySQL server execute result info and return last insert id
+    return self.connection:lastInertId()
 end
 
 -- 执行单条查询，find不支持通过参数设置查询条件，仅支持通过where方法设置
@@ -589,45 +637,116 @@ function _M.find(self)
     -- 清理方法体强制设置的limit条件
     self:removeOptions("limit")
 
-    utils.dump(sql)
+    -- send sql to MySQL server and query
+    self.connection:query(sql)
+
+    -- fetch MySQL server return result
+    local result = self.connection:fetch()
+
+    -- remove all setOptions
+    self:removeOptions();
+
+    -- record last SQL
+    set_last_sql(sql)
+
+    -- 不为空返回第一个值，为空则返回nil
+    return result[1]
 end
 
 -- 执行多条查询，select支持通过参数设置查询条件，仅支持通过where方法设置
 -- @return array|nil 查找到返回二维数组，查找不到返回nil
 function _M.select(self)
+    -- build select SQL
     local sql = buildSelect(self)
 
-    -- execute
+    -- send sql to MySQL server and execute
     self.connection:query(sql)
 
-    -- fetch result
-    for i,v in self.connection.fetch,self.connection do
-        utils.dump(i)
-        utils.dump(v)
-    end
+    -- remove all setOptions
+    self:removeOptions();
+
+    -- self.connection:destruct()
+
+    -- record last SQL
+    set_last_sql(sql)
+
+    -- fetch MySQL server return result
+    return self.connection:fetch()
 end
 
 -- 执行分页查询
 -- @param integer page 当前页码，不传或传nil则自动从http变量名中读取，变量名称配置文件配置
 -- @param integer page_size 一页多少条数据，不传或传nil则自动从分页配置中读取
 -- @param boolean is_complex 是否复杂模式，不传则默认为简单模式 【复杂模式则返回值自动获取总记录数，简单模式则不获取总记录数】
--- @return array {list = {}, page = 1, total = 10}
+-- @return array {list = {}, page = 1, page_size = 10, total = 10}
 function _M.paginate(self, page, page_size, is_complex)
-    utils.dump(page)
-    utils.dump(page_size)
-    utils.dump(utils.empty(is_complex))
-    return self
+    -- set page param
+    if not utils.empty(page) then
+        self:page(page, page_size)
+    end
+
+    -- checkout is set page options,use the default first page and use setting page_size
+    if utils.empty(self:getOptions("page")) then
+        self:page(1, page_size)
+    end
+
+    local page_set = self:getOptions("page")
+
+    -- build select SQL
+    local sql = buildSelect(self)
+
+    -- send sql to MySQL server and execute
+    self.connection:query(sql)
+
+    -- result structure
+    local result = {
+        list       = {}, -- 分页数据列表
+        page       = page_set[1], -- 当前页码
+        page_size  = page_set[2], -- 当前设置项目中的1页多少条
+        total      = false, -- 依据is_complex参数是否返回分页的总数
+    }
+
+    -- fetch now page list result
+    result.list = self.connection:fetch()
+
+    -- complex model，execute the count
+    if not utils.empty(is_complex) then
+        -- todo
+    end
+
+    -- record last SQL
+    set_last_sql(sql)
+
+    -- self.connection:destruct()
+
+    utils.dump(result)
+    -- return self
+end
+
+function _M.count(self, field)
+    local count_field = field or "*"
+
+    -- record last SQL
+    set_last_sql(sql)
 end
 
 -- 执行更新操作
 function _M.update(self, ...)
     local sql = buildUpdate(self)
+
+    -- record last SQL
+    set_last_sql(sql)
+
     utils.dump(sql)
 end
 
 -- 执行删除操作
 function _M.delete(self)
     local sql = buildDelete(self)
+
+    -- record last SQL
+    set_last_sql(sql)
+
     utils.dump(sql)
 end
 
@@ -636,6 +755,9 @@ end
 -- @param array  binds 可选的参数绑定，SQL语句中的问号(?)依次使用该数组参数替换
 function _M.query(self, sql, binds)
 
+    -- record last SQL
+    set_last_sql(sql)
+
     return self
 end
 
@@ -643,6 +765,9 @@ end
 -- @param string sql   SQL语句
 -- @param array  binds 可选的参数绑定，SQL语句中的问号(?)依次使用该数组参数替换
 function _M.execute(self, sql, binds)
+
+    -- record last SQL
+    set_last_sql(sql)
 
     -- 返回影响行数
     return self

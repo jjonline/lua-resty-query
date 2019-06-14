@@ -500,6 +500,9 @@ function _M.data(self, column, value)
     -- 数组形式设置data
     if "table" == type(column) then
         for key,val in pairs(column) do
+            if "number" == key then
+                utils.exception("data method table param need use associative array, not index array")
+            end
             -- 处理字段名
             key = utils.set_back_quote(utils.strip_back_quote(key))
 
