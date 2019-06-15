@@ -277,14 +277,14 @@ function _M.destruct(self)
     if self.state == CONNECTED then
         -- 析构方法，将底层socket加入连接池，无需显式执行close
         local ok, err = self.instance:set_keepalive(pool_config.pool_timeout, pool_config.pool_size)
-        if ok then
-            self.state = DISCONNECTED
-        else
-            -- 析构失败，不报错，记录日志
+        self.state = DISCONNECTED
+        if not ok then
+            -- 析构将连接放入连接池失败，不报错记录日志，执行关闭操作
+            self.instance:close()
+
             utils.logger(err)
             return false
         end
-        return true;
     end
     return true
 end

@@ -298,19 +298,32 @@ local function parseLock(self)
     return " " .. lock .. " "
 end
 
-local _M = {}
+local _M = { version = "0.0.1" }
 local mt = { __index = _M }
 local LAST_SQL = 'no exist last SQL' -- 全局记录最后执行的sql
-local CONNECTION -- query内部尽量使用同一个connection，即底层的同一个resty.mysql
 
 -- 实例化1个新的底层connection对象
 -- @param array config 配置数组
-local function newConnection(config)
-    return connection:new(config)
+local function newConnection(self)
+    return connection:new(self:getSelfConfig())
 end
 _M.newConnection = newConnection
 
+-- 获取底层connection对象
+function _M.getConnection(self)
+    return self.connection
+end
+
+-- 设置底层connection对象，某些场景下需要1个新链接处理的情况
+-- @param connection _connection 新的connection对象
+function _M.setConnection(self, _connection)
+    self.connection = _connection
+    return self
+end
+
 -- 初始化方法，类似构造函数
+-- 启用ngx.ctx特性，保证同一个request周期内被执行的代码一直使用同一个底层mysql连接
+-- 若需在同1个request生命周期内启用多个底层mysql连接，使用对象实例的newConnection方法生成新连接，再通过setConnection设置进去
 -- @param array config 初始化传入配置数组参数，数组结构参照上方 options.config
 function _M.new(_, config)
     local build    = builder:new(config)
@@ -322,20 +335,32 @@ function _M.new(_, config)
     -- 这样设置后，可以通过self.super.method(self, ...) 调用父类的已被覆盖的方法。
     build.super = setmetatable({}, super_mt)
 
-    -- 底层db连接管理器，尽量保持公用同一个
-    if utils.empty(CONNECTION) then
-        CONNECTION = newConnection(build:getSelfConfig())
+    -- 使用request级别生命周期的ngx.ctx作为connection句柄
+    -- 保证1次请求内不显式新生成1个connection的情况下
+    -- 所有sql执行都是通过同一个连接执行，这里ngx.ctx倘若使用Up-value形式会导致问题
+    if utils.empty(ngx.ctx.connection) then
+        ngx.ctx.connection = newConnection(build)
     end
-    build.connection = CONNECTION
+    build.connection = ngx.ctx.connection
 
     return setmetatable(build, mt)
 end
 
+-- 构造1个新的query对象并且底层重新新建mysql连接
+function _M.newQueryWithNewConnection(self)
+    local query = self:new()
+    query.connection = newConnection(query)
+
+    return query
+end
+
 -- 显式执行Db连接
 function _M.connect(self, config)
+    -- 连接配置参数，如果未传则读取对象携带的配置参数
+    config = config or self:getSelfConfig()
     -- 判断是否已连接
     if utils.empty(self.connection.state) then
-        self.connection:connect(config)
+        self.connection:connect()
     end
 
     return self
@@ -361,18 +386,6 @@ end
 -- 显式执行Db关闭连接
 function _M.close(self)
     self.connection:destruct()
-end
-
--- 获取底层connection对象
-function _M.getConnection(self)
-    return self.connection
-end
-
--- 设置底层connection对象，某些场景下需要1个新链接处理的情况
--- @param connection _connection 新的connection对象
-function _M.setConnection(self, _connection)
-    self.connection = _connection
-    return self
 end
 
 -- 闭包方法内执行事务
@@ -945,6 +958,12 @@ function _M.execute(self, sql, binds)
     end
 
     return result
+end
+
+-- 析构，query类最后调用的方法
+function _M.destruct(self)
+    -- 析构将连接放入连接池，实现关闭的功能
+    self.connection:destruct()
 end
 
 -- 可链式调用对象
