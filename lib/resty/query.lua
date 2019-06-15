@@ -147,8 +147,8 @@ local function buildWhere(this)
         -- where内层循环
         for _,item in pairs(list) do
             if "string" == type(item) then
-                -- exp原始值类型解析
-                utils.dump("string")
+                -- exp原始值类型解析，字面量原始值类型，可能会导致注入
+                table_insert(where_arr, logic .. " " .. item)
             elseif "function" == type(item) then
                 -- +++++++++++++++++++++++++++++++++++++++
                 -- +++++++++++++++++++++++++++++++++++++++
@@ -341,12 +341,6 @@ function _M.connect(self, config)
     return self
 end
 
--- 内部debug调试方法
-function _M.debug(self, ...)
-    utils.dump(parseDistinct(self))
-    return self
-end
-
 -- name方法隐含实例化过程，可直接 query:name(table_name)完成新query对象的生成
 -- @param string table 不带前缀的数据表名称
 function _M.name(self, table)
@@ -365,8 +359,8 @@ function _M.clone(self)
 end
 
 -- 显式执行Db关闭连接
-function _M.close(self, ...)
-    return self
+function _M.close(self)
+    self.connection:destruct()
 end
 
 -- 获取底层connection对象

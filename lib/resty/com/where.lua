@@ -153,6 +153,9 @@ function _M.where(self, column, operate, condition)
                 table_insert(_where, parseInVal(condition))
             elseif utils.in_array(_operate, {'BETWEEN', 'NOT BETWEEN'}) then
                 table_insert(_where, parseBetweenVal(condition))
+            elseif "EXP" == _operate then
+                -- 构造成字符串，EXP模式可能会导致注入，尽量避免使用
+                _where = utils.set_back_quote(utils.strip_back_quote(column)) .. utils.rtrim(condition)
             else
                 -- 将operate参数传递过来的值quote之后存储
                 table_insert(_where, utils.quote_value(condition))
@@ -204,6 +207,9 @@ function _M.whereOr(self, column, operate, condition)
                 table_insert(_where, parseInVal(condition))
             elseif utils.in_array(_operate, {'BETWEEN', 'NOT BETWEEN'}) then
                 table_insert(_where, parseBetweenVal(condition))
+            elseif "EXP" == _operate then
+                -- 构造成字符串，EXP模式可能会导致注入，尽量避免使用，若确需使用请务必过滤好condition参数
+                _where = utils.set_back_quote(utils.strip_back_quote(column)) .. utils.rtrim(condition)
             else
                 -- 将operate参数传递过来的值quote之后存储
                 table_insert(_where, utils.quote_value(condition))
