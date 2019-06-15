@@ -299,7 +299,7 @@ end
 
 local _M = {}
 local mt = { __index = _M }
-local LAST_SQL = 'none'
+local LAST_SQL = 'no exist last SQL' -- 全局记录最后执行的sql
 
 -- 初始化方法，类似构造函数
 -- @param array config 初始化传入配置数组参数，数组结构参照上方 options.config
@@ -572,7 +572,7 @@ end
 -- 执行单条数据新增
 -- @param array   data 可以通过insert第一个参数设置要信息的key-value值对象，会覆盖由data设置的值
 -- @param boolean is_replace 是否使用REPLACE语句执行新增，默认否
--- @return boolean 执行成功返回true，执行失败返回false
+-- @return number|nil 方法添加数据成功返回添加成功的条数，通常情况返回1，失败或异常返回nil
 function _M.insert(self, data, is_replace)
     -- insert第一个参数传入要insert的键值对，执行设置data
     if "table" == type(data) then
@@ -622,7 +622,7 @@ function _M.insertGetId(self, data, is_replace)
     set_last_sql(sql)
 
     -- fetch MySQL server execute result info and return last insert id
-    return self.connection:lastInertId()
+    return self.connection:lastInsertId()
 end
 
 -- 执行单条查询，find不支持通过参数设置查询条件，仅支持通过where方法设置
@@ -648,6 +648,8 @@ function _M.find(self)
 
     -- record last SQL
     set_last_sql(sql)
+
+    -- self.connection:destruct()
 
     -- 不为空返回第一个值，为空则返回nil
     return result[1]
@@ -695,9 +697,6 @@ function _M.paginate(self, page, page_size, is_complex)
     -- build select SQL
     local sql = buildSelect(self)
 
-    -- send sql to MySQL server and execute
-    self.connection:query(sql)
-
     -- result structure
     local result = {
         list       = {}, -- 分页数据列表
@@ -706,12 +705,22 @@ function _M.paginate(self, page, page_size, is_complex)
         total      = false, -- 依据is_complex参数是否返回分页的总数
     }
 
-    -- fetch now page list result
-    result.list = self.connection:fetch()
-
     -- complex model，execute the count
     if not utils.empty(is_complex) then
         -- todo
+    end
+
+    -- send single or multi sql to MySQL server and execute
+    self.connection:query(sql)
+
+    -- fetch now page list result
+    for key,val in self.connection:fetchMany() do
+        if key == 1 then
+            result.list = val
+        end
+        if key == 2 then
+            result.total = val
+        end
     end
 
     -- record last SQL
@@ -719,8 +728,7 @@ function _M.paginate(self, page, page_size, is_complex)
 
     -- self.connection:destruct()
 
-    utils.dump(result)
-    -- return self
+    return result
 end
 
 function _M.count(self, field)
@@ -731,46 +739,125 @@ function _M.count(self, field)
 end
 
 -- 执行更新操作
-function _M.update(self, ...)
+-- @param array   data 设置需要更新数据的键值对
+-- @return number|nil 执行更新成功返回update影响的行数，执行失败返回nil
+function _M.update(self, data)
+    -- 如果有设置更新数据的键值对，则设置键值对
+    if "table" == type(data) then
+        self:data(data)
+    end
+
+    -- build update SQL
     local sql = buildUpdate(self)
 
+    -- send sql to MySQL server and execute
+    self.connection:execute(sql)
+
+    -- remove all setOptions
+    self:removeOptions();
+
     -- record last SQL
     set_last_sql(sql)
 
-    utils.dump(sql)
+    -- self.connection:destruct()
+
+    return self.connection:affectedRows()
 end
 
--- 执行删除操作
+-- 执行删除操作，delete不支持通过参数设置删除条件，仅支持通过where方法设置
+-- @return number|nil 执行更新成功返回删除影响的行数，执行失败返回nil
 function _M.delete(self)
+    -- build delete SQL
     local sql = buildDelete(self)
 
+    -- send sql to MySQL server and execute
+    self.connection:execute(sql)
+
+    -- remove all setOptions
+    self:removeOptions();
+
     -- record last SQL
     set_last_sql(sql)
 
-    utils.dump(sql)
+    -- self.connection:destruct()
+
+    return self.connection:affectedRows()
 end
 
--- 执行原生sql的查询--select
+-- 执行原生sql的查询
 -- @param string sql   SQL语句
 -- @param array  binds 可选的参数绑定，SQL语句中的问号(?)依次使用该数组参数替换
+-- @return array
 function _M.query(self, sql, binds)
+    -- check
+    if utils.empty(sql) then
+        utils.exception("please set query SQL statement use first param")
+        return nil
+    end
+
+    -- bind
+    if not utils.empty(binds) and "table" == type(binds) then
+        sql = utils.db_bind_value(sql, binds)
+    end
+
+    -- send single or multi sql to MySQL server and execute
+    self.connection:query(sql)
+
+    -- fetch more result use iterator
+    local result = {}
+    for key,val in self.connection:fetchMany() do
+        result[key] = val
+    end
 
     -- record last SQL
     set_last_sql(sql)
 
-    return self
+    -- self.connection:destruct()
+
+    -- if just one statement return level one
+    if 1 == #result then
+        return result[1]
+    end
+
+    return result
 end
 
 -- 执行原生sql的命令--update、delete、create、alter等
 -- @param string sql   SQL语句
 -- @param array  binds 可选的参数绑定，SQL语句中的问号(?)依次使用该数组参数替换
+-- @return array
 function _M.execute(self, sql, binds)
+    -- check
+    if utils.empty(sql) then
+        utils.exception("please set execute SQL statement use first param")
+        return nil
+    end
+
+    -- bind
+    if not utils.empty(binds) and "table" == type(binds) then
+        sql = utils.db_bind_value(sql, binds)
+    end
+
+    -- send sql to MySQL server and execute
+    self.connection:execute(sql)
+
+    -- fetch more result use iterator
+    local result = {}
+    for key,val in self.connection:fetchMany() do
+        result[key] = val
+    end
 
     -- record last SQL
     set_last_sql(sql)
 
-    -- 返回影响行数
-    return self
+    -- self.connection:destruct()
+
+    -- if just one statement return level one
+    if 1 == #result then
+        return result[1]
+    end
+
+    return result
 end
 
 -- 可链式调用对象

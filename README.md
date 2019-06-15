@@ -270,7 +270,7 @@ end)
 
 功能：执行insert方法新增1条数据并返回新增数据的主键id
 
-说明：`insertGetId` 为insert的升级方法，insert方法返回布尔值，`insertGetId`执行insert数据成功后返回新增数据的主键id，参数与insert相同，仅返回值有差异。
+说明：`insertGetId` 为insert的升级方法，insert方法返回新增数据行数，`insertGetId`执行insert数据成功后返回新增数据的主键id，参数与insert相同，仅返回值有差异。
 
 
 # delete 方法

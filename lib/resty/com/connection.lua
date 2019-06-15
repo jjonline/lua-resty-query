@@ -201,7 +201,7 @@ function _M.fetchMany(self)
     return fetchIterator, self, 0;
 end
 
--- 执行查询类型sql，没有返回值，使用effectRows或lastInertId获取返回值
+-- 执行查询类型sql，没有返回值，使用affectedRows或lastInsertId获取返回值
 -- @param string sql 执行的sql语句
 function _M.execute(self, sql)
     -- 智能执行连接
@@ -240,7 +240,7 @@ end
 
 -- 返回最后插入行的ID或序列值
 -- @return number|nil 返回新增id或失败nil
-function _M.lastInertId(self)
+function _M.lastInsertId(self)
     -- read
     local res, err, code, sqlstate = self.instance:read_result()
 
