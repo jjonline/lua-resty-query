@@ -44,13 +44,19 @@ local utils        = require "resty.com.utils"
 local connection   = require "resty.com.connection"
 local builder      = require "resty.com.builder"
 
---[[
--- 定义内部存储变量
-local options = {
-    connection = connection,
-    where      = nil
-}
-]]--
+local _M = { version = "0.0.1" }
+local mt = { __index = _M }
+local LAST_SQL = 'no exist last SQL' -- 全局记录最后执行的sql
+
+-- 设置最近1次执行过的sql，全局模式
+local function set_last_sql(sql)
+    LAST_SQL = sql
+end
+
+-- 获取最近1次执行过的sql，全局模式
+local function get_last_sql()
+    return LAST_SQL
+end
 
 local selectSQL    = "SELECT#DISTINCT# #FIELD# FROM #TABLE##JOIN##WHERE##GROUP##HAVING##ORDER##LIMIT##LOCK#"
 local insertSQL    = "#INSERT# INTO #TABLE# (#FIELD#) VALUES (#DATA#)"
@@ -298,10 +304,6 @@ local function parseLock(self)
     return " " .. lock .. " "
 end
 
-local _M = { version = "0.0.1" }
-local mt = { __index = _M }
-local LAST_SQL = 'no exist last SQL' -- 全局记录最后执行的sql
-
 -- 实例化1个新的底层connection对象
 -- @param array config 配置数组
 local function newConnection(self)
@@ -420,32 +422,22 @@ end
 -- 开始1个事务
 -- @return boolean
 function _M.startTrans(self)
-    -- 底层connection发送事物开始标记
+    -- 底层connection发送事务开始标记
     return self.connection:startTrans()
 end
 
 -- commit提交1个事务
 -- @return boolean
 function _M.commit(self, ...)
-    -- 底层connection发送事物提交标记
+    -- 底层connection发送事务提交标记
     return self.connection:commit()
 end
 
 -- rollback回滚1个事务
 -- @return boolean
 function _M.rollback(self, ...)
-    -- 底层connection发送事物提交标记
+    -- 底层connection发送事务回滚标记
     return self.connection:rollback()
-end
-
--- 设置最近1次执行过的sql，全局模式
-local function set_last_sql(sql)
-    LAST_SQL = sql
-end
-
--- 获取最近1次执行过的sql，全局模式
-local function get_last_sql()
-    return LAST_SQL
 end
 
 -- 构建select的sql语句
