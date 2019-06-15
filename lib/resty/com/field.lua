@@ -135,4 +135,10 @@ function _M.get(self, is_array)
     return self.field
 end
 
+-- 清理内部设置的字段
+function _M.reset(self)
+    self.field = {}
+    return self
+end
+
 return _M

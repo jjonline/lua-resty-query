@@ -120,6 +120,12 @@ function _M.getOptions(self)
     return self.options
 end
 
+-- 清理where内部条件
+function _M.removeOptions(self)
+    self.options = { AND = {}, OR  = {} }
+    return self
+end
+
 -- where构造查询条件核心方法
 -- @param string column  字段名称
 -- @param string operate 操作符

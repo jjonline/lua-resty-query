@@ -44,9 +44,9 @@ local utils        = require "resty.com.utils"
 local connection   = require "resty.com.connection"
 local builder      = require "resty.com.builder"
 
-local _M = { version = "0.0.1" }
-local mt = { __index = _M }
-local LAST_SQL = 'no exist last SQL' -- 全局记录最后执行的sql
+local _M           = { version = "0.0.1" }
+local mt           = { __index = _M }
+local LAST_SQL     = 'no exist last SQL' -- 全局记录最后执行的sql
 
 -- 设置最近1次执行过的sql，全局模式
 local function set_last_sql(sql)
@@ -334,9 +334,6 @@ function _M.new(_, config)
     -- 当方法在子类中查询不到时，可以再去父类中去查找。
     setmetatable(_M, super_mt)
 
-    -- 这样设置后，可以通过self.super.method(self, ...) 调用父类的已被覆盖的方法。
-    build.super = setmetatable({}, super_mt)
-
     -- 使用request级别生命周期的ngx.ctx作为connection句柄
     -- 保证1次请求内不显式新生成1个connection的情况下
     -- 所有sql执行都是通过同一个连接执行，这里ngx.ctx倘若使用Up-value形式会导致问题
@@ -385,12 +382,18 @@ function _M.clone(self)
     return new_query
 end
 
+-- 重置query对象的内部选项值
+-- removeOptions方法的别名，避免removeOptions引起的歧义误解
+function _M.reset(self)
+    return self:removeOptions()
+end
+
 -- 显式执行Db关闭连接
 function _M.close(self)
     self.connection:destruct()
 end
 
--- 闭包方法内执行安全执行事务，方法体内部自动构造新底层连接执行事务
+-- 闭包方法内安全执行事务，方法体内部自动构造新底层连接执行事务
 -- @param function callable 被执行的回调函数，回调函数的参数为1个query对象
 -- @return boolean, callable result 返回两个值，第一个值布尔值标记事务执行成功与否，第二值为回调函数执行后的返回值
 function _M.transaction(self, callable)
@@ -428,14 +431,14 @@ end
 
 -- commit提交1个事务
 -- @return boolean
-function _M.commit(self, ...)
+function _M.commit(self)
     -- 底层connection发送事务提交标记
     return self.connection:commit()
 end
 
 -- rollback回滚1个事务
 -- @return boolean
-function _M.rollback(self, ...)
+function _M.rollback(self)
     -- 底层connection发送事务回滚标记
     return self.connection:rollback()
 end
@@ -543,12 +546,8 @@ local function buildInsert(self, is_replace)
                 utils.implode(" , ", fields),
                 utils.implode(" , ", values)
             },
-            -- #INSERT# INTO #TABLE# (#FIELD#) VALUES (#DATA#)
             insertSQL
     )
-
-    -- 记录最近一次执行过的sql
-    set_last_sql(sql)
 
     return utils.rtrim(sql)
 end
@@ -581,9 +580,6 @@ local function buildDelete(self)
             },
             deleteSQL
     )
-
-    -- 记录最近一次执行过的sql
-    set_last_sql(sql)
 
     return utils.rtrim(sql)
 end
@@ -957,9 +953,9 @@ function _M.execute(self, sql, binds)
     self.connection:execute(sql)
 
     -- fetch more result use iterator
-    local result = {}
-    for key,val in self.connection:fetchMany() do
-        result[key] = val
+    local affected_rows = 0
+    for _,val in self.connection:fetchMany() do
+        affected_rows = affected_rows + (val.affected_rows or 0)
     end
 
     -- remove all setOptions
@@ -970,12 +966,8 @@ function _M.execute(self, sql, binds)
 
     -- self.connection:destruct()
 
-    -- if just one statement return level one
-    if 1 == #result then
-        return result[1]
-    end
-
-    return result
+    -- return all sql affected_rows count
+    return affected_rows
 end
 
 -- 析构，query类最后调用的方法

@@ -256,11 +256,28 @@ local function _removeOptions(self, option)
     -- 如果未传参option则表示清理所有内部option
     -- 如果有传参option则检查该option是否为内部的key后单独清理该1个option
     if nil == option then
+        -- 清理内部where设置的条件，避免冒泡
+        self._where:removeOptions()
+
+        -- 清理内部设置的field条件，避免冒泡
+        self._field:reset()
+
+        -- 重置
         self.options = options -- 直接内部默认选项结构覆盖，清理全部已设置的option选项
     else
         -- 存在该内部选项值，则只清理该一项，不存在该key时避免混乱不做任何动作
         if nil ~= options[option] then
             self.options[option] = options[option]
+
+            -- 清理单选项where，需同时清理内部
+            if "where" == option then
+                self._where:removeOptions()
+            end
+
+            -- 清理单选项field，需同时清理内部
+            if "where" == option then
+                self._field:reset()
+            end
         end
     end
 

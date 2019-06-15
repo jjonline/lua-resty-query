@@ -266,7 +266,7 @@ end
 -- @return boolean
 function _M.startTrans(self)
     if self.in_transaction then
-        -- 不支持事物嵌套
+        -- 不支持事务嵌套
         utils.exception("[startTrans]do not support transactions nesting")
         return false
     end
@@ -282,7 +282,7 @@ function _M.startTrans(self)
         if not utils.empty(sqlstate) then
             err = err .. ", error code is " .. code .. " and " .. sqlstate
         end
-        utils.exception("[beginTransaction]failed to execute SQL statement. " .. err)
+        utils.exception("[startTrans]failed to execute SQL statement. " .. err)
         return false
     end
 
