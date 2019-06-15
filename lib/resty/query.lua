@@ -388,28 +388,54 @@ function _M.close(self)
     self.connection:destruct()
 end
 
--- 闭包方法内执行事务
+-- 闭包方法内执行安全执行事务，方法体内部自动构造新底层连接执行事务
+-- @param function callable 被执行的回调函数，回调函数的参数为1个query对象
+-- @return boolean, callable result 返回两个值，第一个值布尔值标记事务执行成功与否，第二值为回调函数执行后的返回值
 function _M.transaction(self, callable)
+    -- create a new query with a new connection
+    local query = self:newQueryWithNewConnection()
 
-    return self
+    -- beginTransaction
+    query.connection:startTrans()
+
+    -- protected pcall run callable
+    local ok,result = pcall(callable, query)
+
+    -- check if there has an error
+    if not ok then
+        -- error occur and rollback
+        query.connection:rollback()
+    else
+        -- no error occur and commit
+        query.connection:commit()
+    end
+
+    -- destroy this query and release db connection to co-socket pool
+    query:destruct()
+    query = nil
+
+    return not (not ok), result
 end
 
 -- 开始1个事务
-function _M.startTrans(self, callable)
-
-    return self
+-- @return boolean
+function _M.startTrans(self)
+    -- 底层connection发送事物开始标记
+    return self.connection:startTrans()
 end
 
 -- commit提交1个事务
+-- @return boolean
 function _M.commit(self, ...)
-
-    return self
+    -- 底层connection发送事物提交标记
+    return self.connection:commit()
 end
 
 -- rollback回滚1个事务
+-- @return boolean
 function _M.rollback(self, ...)
-
-    return self
+    -- 底层connection发送事物提交标记
+    return self.connection:rollback()
 end
 
 -- 设置最近1次执行过的sql，全局模式

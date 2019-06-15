@@ -103,7 +103,7 @@ config结构
 | NOT IN | in查询取非 |`where('field','NOT IN','1,2,10')` 或 `where('field','NOT IN',{1,2,10})`|
 | NULL | null等价查询 |`where('field','NULL')`，如果需要查询等于字符串null的，写法：`where('field','=','NULL')`|
 | NOT NULL | null等价查询取非 |`where('field','NOT NULL')`|
-| EXP | 表达式查询 |`where('field','EXP', ' IN (1,2)')`， 尽量避免使用，确需使用请务必处理好第三个参数|
+| EXP | 表达式查询 |`where('field','EXP', ' IN (1,2)')`， 尽量避免使用，确需使用请务必处理好第三个参数 |
 
 > 操作符不区分大小写，建议统一使用大写！
 
@@ -289,6 +289,77 @@ end)
 
 * `count()` 获取查询语句执行后的结果总数
 * `count(field)` 按`field`字段查询结果集总数
+
+# transaction 方法
+
+功能：事务闭包方法，闭包内执行事务
+
+用法：
+
+* `transaction(callable)`  回调函数闭包内执行事务
+
+> callable为一个闭包函数，函数的唯一参数为1个新的query对象，此方法是优先推荐使用的！
+
+> callable中若需回滚事务，则使用`error`方法抛出1个异常即可，若没有异常则callable方法体执行完毕后事务提交
+
+# transaction 事务组方法
+
+> 下方3个方法需配合使用，且需自主实现`pcall`机制的异常抛出和捕获以及事务提交、回滚的逻辑
+
+## startTrans 方法
+
+开启1个事务
+
+## commit 方法
+
+提交1个事务
+
+## rollback 方法
+
+回滚1个事务
+
+
+使用范例：
+
+````
+local db = query:new():table("table")
+
+db:startTrans()
+
+-- your trans code
+
+-- commit
+db:commit()
+
+-- or rollback
+db:rollback()
+
+````
+
+最佳实践：
+
+````
+local db = query:new():table("table")
+
+-- 开启事务
+db:startTrans()
+
+-- 闭包pcall异常保护执行代码
+if ok,result = pcall(function () 
+    -- your code
+    
+end, db)
+
+if not ok then
+    -- 闭包事务执行出错，回滚
+    db:rollback()
+else
+    -- 闭包事务执行成功，提交
+    db:commit()
+end
+
+
+````
 
 # buildSql 方法
 

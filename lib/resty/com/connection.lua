@@ -263,15 +263,94 @@ function _M.lastInsertId(self)
 end
 
 -- 开始一个事务
-function _M.beginTransaction(self) end
+-- @return boolean
+function _M.startTrans(self)
+    if self.in_transaction then
+        -- 不支持事物嵌套
+        utils.exception("[startTrans]do not support transactions nesting")
+        return false
+    end
+
+    -- 智能执行连接
+    self:connect()
+
+    -- 开始事务
+    local res, err, code, sqlstate = self.instance:query("START TRANSACTION;")
+
+    -- 如果是sql错误，则记录错误日志
+    if utils.empty(res) or nil ~= code then
+        if not utils.empty(sqlstate) then
+            err = err .. ", error code is " .. code .. " and " .. sqlstate
+        end
+        utils.exception("[beginTransaction]failed to execute SQL statement. " .. err)
+        return false
+    end
+
+    -- 标记当前处于事务之中
+    self.in_transaction = true
+
+    return true
+end
 
 -- 回滚一个事务
-function _M.rollback(self) end
+-- @return boolean
+function _M.rollback(self)
+    if not self.in_transaction then
+        utils.exception("[rollback]do not in transaction, not allow use this method")
+        return false
+    end
+
+    -- 智能执行连接
+    self:connect()
+
+    -- 回滚事务
+    local res, err, code, sqlstate = self.instance:query("ROLLBACK;")
+
+    -- 如果是sql错误，则记录错误日志
+    if utils.empty(res) or nil ~= code then
+        if not utils.empty(sqlstate) then
+            err = err .. ", error code is " .. code .. " and " .. sqlstate
+        end
+        utils.exception("[rollback]failed to execute SQL statement. " .. err)
+        return false
+    end
+
+    -- 取消事务占用标记
+    self.in_transaction = false
+
+    return true
+end
 
 -- 提交一个事务
-function _M.commit(self) end
+-- @return boolean
+function _M.commit(self)
+    if not self.in_transaction then
+        utils.exception("[commit]do not in transaction, not allow use this method")
+        return false
+    end
 
--- 析构方法：不要求调用方显示执行close和维护连接池
+    -- 智能执行连接
+    self:connect()
+
+    -- 提交事务 commit
+    local res, err, code, sqlstate = self.instance:query("COMMIT;")
+
+    -- 如果是sql错误，则记录错误日志
+    if utils.empty(res) or nil ~= code then
+        if not utils.empty(sqlstate) then
+            err = err .. ", error code is " .. code .. " and " .. sqlstate
+        end
+        utils.exception("[commit]failed to execute SQL statement. " .. err)
+        return false
+    end
+
+    -- 取消事务占用标记
+    self.in_transaction = false
+
+    return true
+end
+
+-- 析构方法：调用方需显示执行以和维护连接池
 -- 调用方在业务完成之后显式调用析构方法即可
 function _M.destruct(self)
     if self.state == CONNECTED then

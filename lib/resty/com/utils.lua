@@ -105,7 +105,7 @@ end
 -- 抛出异常
 -- @param string message
 local function exception(message)
-    output("ERROR:" .. message .. "\n") -- 页面输出错误日志
+    output("[ERROR] " .. message .. "\n") -- 页面输出错误日志
     logger(message, ngx.ERR) -- 错误日志
     error(message)
 end
