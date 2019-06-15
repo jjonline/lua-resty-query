@@ -105,6 +105,7 @@ end
 -- 抛出异常
 -- @param string message
 local function exception(message)
+    output("lua-resty-query error : " .. message .. "\n") -- 页面输出错误日志
     logger(message, ngx.ERR) -- 错误日志
     error(message)
 end
@@ -393,7 +394,7 @@ end
 local function db_bind_value(sql, value)
     -- 检查参数
     if not table_is_array(value) then
-        exception('[parse error]db_bind_value param error')
+        exception("[bind]binds param need be type of index array")
         return sql
     end
 
@@ -406,7 +407,7 @@ local function db_bind_value(sql, value)
 
     -- 给定的待绑定的参数数量与sql中的问号变量不一致
     if total ~= #value then
-        exception('[parse error]db_bind_value bind value length not equal sql variable length')
+        exception("[bind]bind index array of length not equal placeholder ('?') length")
         return sql
     end
 

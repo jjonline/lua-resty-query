@@ -281,6 +281,15 @@ end)
 
 * `delete()` 执行delete语句删除数据，delete方法不支持任何参数，必须通过where设置条件
 
+# count 方法
+
+功能：获取查询语句的结果集总数
+
+用法：
+
+* `count()` 获取查询语句执行后的结果总数
+* `count(field)` 按`field`字段查询结果集总数
+
 # buildSql 方法
 
 功能：开发调试，用于生成拟执行的SQL语句

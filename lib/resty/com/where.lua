@@ -90,7 +90,8 @@ local function parseBetweenVal(range)
         }
     end
 
-    utils.exception("where between param error")
+    -- 两个元素的索引数组，或逗号分隔的字符串
+    utils.exception("[where between]please use index array or string separated by comma")
 end
 
 -- 内部方法：解析in|not in条件值
@@ -110,7 +111,8 @@ local function parseInVal(range)
         return in_arr
     end
 
-    utils.exception("where in param error")
+    -- 索引数组，或逗号分隔的字符串
+    utils.exception("[where in]please use index array or string separated by comma")
 end
 
 -- 获取内部保存的where整个数组
@@ -124,8 +126,7 @@ end
 -- @param string|array condition 操作条件
 function _M.where(self, column, operate, condition)
     if not column then
-        utils.exception('[parse error]WHERE param column is missing')
-        return self
+        utils.exception("[where]method first param is missing")
     end
 
     -- 处理变量
@@ -176,8 +177,7 @@ end
 -- @param string|array condition 操作条件
 function _M.whereOr(self, column, operate, condition)
     if not column then
-        utils.exception('[parse error]whereOr param column is missing')
-        return self
+        utils.exception("[whereOr]method first param is missing")
     end
 
     -- 处理变量

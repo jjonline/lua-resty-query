@@ -33,6 +33,7 @@
 local pairs        = pairs
 local type         = type
 local pcall        = pcall
+local tonumber     = tonumber
 local table_insert = table.insert
 local string_sub   = string.sub
 local string_len   = string.len
@@ -96,7 +97,7 @@ local function parseTable(self)
     -- 获取并检测是否设置表
     local table = self:getOptions("table")
     if utils.empty(table) then
-        utils.exception('please set table name without prefix first')
+        utils.exception("[table]please set table name without prefix at first")
     end
 
     return table
@@ -160,7 +161,7 @@ local function buildWhere(this)
                     local sub_where = logic .. " (" .. buildWhere(sub_query) .. ")" -- 闭包加入括号包裹
                     table_insert(where_arr, sub_where)
                 else
-                    utils.exception('callable execute error,please use corrected method and param')
+                    utils.exception("[where]callable execute error, please use corrected method and param")
                 end
                 -- +++++++++++++++++++++++++++++++++++++++
                 -- +++++++++++++++++++++++++++++++++++++++
@@ -300,6 +301,14 @@ end
 local _M = {}
 local mt = { __index = _M }
 local LAST_SQL = 'no exist last SQL' -- 全局记录最后执行的sql
+local CONNECTION -- query内部尽量使用同一个connection，即底层的同一个resty.mysql
+
+-- 实例化1个新的底层connection对象
+-- @param array config 配置数组
+local function newConnection(config)
+    return connection:new(config)
+end
+_M.newConnection = newConnection
 
 -- 初始化方法，类似构造函数
 -- @param array config 初始化传入配置数组参数，数组结构参照上方 options.config
@@ -313,8 +322,11 @@ function _M.new(_, config)
     -- 这样设置后，可以通过self.super.method(self, ...) 调用父类的已被覆盖的方法。
     build.super = setmetatable({}, super_mt)
 
-    -- 底层db连接管理器
-    build.connection = connection:new(config)
+    -- 底层db连接管理器，尽量保持公用同一个
+    if utils.empty(CONNECTION) then
+        CONNECTION = newConnection(build:getSelfConfig())
+    end
+    build.connection = CONNECTION
 
     return setmetatable(build, mt)
 end
@@ -335,15 +347,21 @@ function _M.debug(self, ...)
     return self
 end
 
--- name方法隐含实例化过程，可直接 query:name(table_name)完成新query对象的生产
+-- name方法隐含实例化过程，可直接 query:name(table_name)完成新query对象的生成
 -- @param string table 不带前缀的数据表名称
 function _M.name(self, table)
     return self:new():table(table)
 end
 
--- 对象本身克隆，内部options等信息保留
+-- 克隆方法，即将当前对象各属性保留生成1个新对象，内部options等信息保留
+-- 与new方法、name方法的区别在于，保不保留内部options选项
 function _M.clone(self)
-    return utils.deep_copy(self)
+    local new_query = self:new()
+
+    -- obtain origin options
+    new_query:setOptions(self:getOptions())
+
+    return new_query
 end
 
 -- 显式执行Db关闭连接
@@ -354,6 +372,13 @@ end
 -- 获取底层connection对象
 function _M.getConnection(self)
     return self.connection
+end
+
+-- 设置底层connection对象，某些场景下需要1个新链接处理的情况
+-- @param connection _connection 新的connection对象
+function _M.setConnection(self, _connection)
+    self.connection = _connection
+    return self
 end
 
 -- 闭包方法内执行事务
@@ -430,8 +455,7 @@ local function buildUpdate(self)
     -- 未设置where条件，不允许执行
     local where = self:getOptions("where")
     if utils.empty(where.OR) and utils.empty(where.AND) then
-        utils.exception("execute update SQL must be set where condition")
-        return false
+        utils.exception("[delete]execute update SQL must be set where condition")
     end
 
     local sql = utils.str_replace(
@@ -467,7 +491,7 @@ local function buildInsert(self, is_replace)
 
     -- 没有数据集对象
     if utils.empty(data) then
-        utils.exception("please set insert data first")
+        utils.exception("[insert]please use data method or insert method set insert data")
     end
 
     -- 依据replace条件调度新增语句的方式
@@ -510,8 +534,7 @@ local function buildDelete(self)
     -- 未设置where条件，不允许执行
     local where = self:getOptions("where")
     if utils.empty(where.OR) and utils.empty(where.AND) then
-        utils.exception("execute delete SQL must be set where condition")
-        return false
+        utils.exception("[delete]execute delete SQL must be set where condition")
     end
 
     local sql = utils.str_replace(
@@ -538,6 +561,49 @@ local function buildDelete(self)
     set_last_sql(sql)
 
     return utils.rtrim(sql)
+end
+
+-- 构建count查询的sql语句
+-- @param field string count查询的字段名称
+-- @param string
+local function buildCount(self, field)
+    -- group分组查询情况进行子查询处理
+    if not utils.empty(self:getOptions("group")) then
+        local sub_query = self:clone() -- 克隆1份对象方法
+        local sub_sql   = buildSelect(sub_query) -- 构造group子查询sql
+
+        -- 设置子查询成为为父查询的table表名称和表别名
+        self:setOptions("table", "(" .. sub_sql .. ") _resty_query_group_count_")
+
+        -- reset group and field
+        field = ""
+
+        -- clear self do no used options
+        self:removeOptions("group")
+        self:removeOptions("where")
+        self:removeOptions("order")
+        self:removeOptions("limit")
+    end
+
+    -- parse count field
+    local count_field
+    if not utils.empty(field) then
+        count_field = utils.set_back_quote(utils.strip_back_quote(field))
+        count_field = "count(" .. count_field .. ") AS `resty_query_count`"
+    else
+        count_field = "count(*) AS `resty_query_count`"
+    end
+
+    -- clear field that may exist
+    self:removeOptions("field")
+
+    -- set limit param 1
+    self:limit(1)
+
+    -- set count field
+    self:setOptions("field", {count_field})
+
+    return buildSelect(self)
 end
 
 -- 依据action动作生成拟执行的sql语句
@@ -692,6 +758,7 @@ function _M.paginate(self, page, page_size, is_complex)
         self:page(1, page_size)
     end
 
+    -- get page options variable
     local page_set = self:getOptions("page")
 
     -- build select SQL
@@ -707,7 +774,8 @@ function _M.paginate(self, page, page_size, is_complex)
 
     -- complex model，execute the count
     if not utils.empty(is_complex) then
-        -- todo
+        -- 构造总数查询的sql，最终执行时一次性发送2条sql
+        sql = sql .. ";" .. buildCount(self)
     end
 
     -- send single or multi sql to MySQL server and execute
@@ -715,13 +783,16 @@ function _M.paginate(self, page, page_size, is_complex)
 
     -- fetch now page list result
     for key,val in self.connection:fetchMany() do
-        if key == 1 then
+        if 1 == key then
             result.list = val
         end
-        if key == 2 then
-            result.total = val
+        if 2 == key then
+            result.total = tonumber(val[1].resty_query_count or 0) -- 如果有查询总记录数，取出总记录数
         end
     end
+
+    -- remove all setOptions
+    self:removeOptions()
 
     -- record last SQL
     set_last_sql(sql)
@@ -731,11 +802,27 @@ function _M.paginate(self, page, page_size, is_complex)
     return result
 end
 
+-- count查询总数
+-- @param string field 需要计数的字段，可选参数，留空则count总行数
+-- @return number 返回大等于0的整数
 function _M.count(self, field)
-    local count_field = field or "*"
+    -- build count select sql, support group sql statement
+    local sql = buildCount(self, field)
+
+    -- send single or multi sql to MySQL server and execute
+    self.connection:query(sql)
+
+    -- fetch one result
+    local result = self.connection:fetch()
+
+    -- remove all setOptions
+    self:removeOptions()
 
     -- record last SQL
     set_last_sql(sql)
+
+    -- convert to number
+    return tonumber(result[1]["resty_query_count"] or 0)
 end
 
 -- 执行更新操作
@@ -754,7 +841,7 @@ function _M.update(self, data)
     self.connection:execute(sql)
 
     -- remove all setOptions
-    self:removeOptions();
+    self:removeOptions()
 
     -- record last SQL
     set_last_sql(sql)
@@ -774,7 +861,7 @@ function _M.delete(self)
     self.connection:execute(sql)
 
     -- remove all setOptions
-    self:removeOptions();
+    self:removeOptions()
 
     -- record last SQL
     set_last_sql(sql)
@@ -791,7 +878,7 @@ end
 function _M.query(self, sql, binds)
     -- check
     if utils.empty(sql) then
-        utils.exception("please set query SQL statement use first param")
+        utils.exception("[query]please set execute SQL statement use first param")
         return nil
     end
 
@@ -809,6 +896,9 @@ function _M.query(self, sql, binds)
         result[key] = val
     end
 
+    -- remove all setOptions
+    self:removeOptions()
+
     -- record last SQL
     set_last_sql(sql)
 
@@ -822,14 +912,14 @@ function _M.query(self, sql, binds)
     return result
 end
 
--- 执行原生sql的命令--update、delete、create、alter等
+-- 执行原生sql的命令--insert、update、delete、create、alter等
 -- @param string sql   SQL语句
 -- @param array  binds 可选的参数绑定，SQL语句中的问号(?)依次使用该数组参数替换
 -- @return array
 function _M.execute(self, sql, binds)
     -- check
     if utils.empty(sql) then
-        utils.exception("please set execute SQL statement use first param")
+        utils.exception("[execute]please set execute SQL statement use first param")
         return nil
     end
 
@@ -846,6 +936,9 @@ function _M.execute(self, sql, binds)
     for key,val in self.connection:fetchMany() do
         result[key] = val
     end
+
+    -- remove all setOptions
+    self:removeOptions()
 
     -- record last SQL
     set_last_sql(sql)

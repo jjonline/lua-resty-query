@@ -113,8 +113,7 @@ function _M.set(self, field)
         field_array = parse_array(field)
     else
         -- 暂时仅支持string和table类型参数，其他类型报错
-        utils.exception("[parse error]FIELD param error, please modify it")
-        return self.field
+        utils.exception("[field]please use associative array or string separated by comma")
     end
 
     -- 逐个添加进数组

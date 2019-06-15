@@ -157,7 +157,7 @@ local parseJoinTable = function(self, table_name)
     end
 
     -- 解析出的数组长度大于3或为0，join的格式有误
-    utils.exception("[parse error]JOIN table name param format error,please modify it")
+    utils.exception("[join]first param please use 'no_prefix_table' or 'no_prefix_table no_prefix_table'")
     return nil
 end
 
@@ -233,6 +233,12 @@ _M.getOptions = _getOptions
 --- @param mixed  value  内部构造器值
 --- @return mixed
 local function _setOptions(self, option, value)
+    -- 完整options结构数组设置
+    if "table" == type(option) then
+        self.options = option
+        return self
+    end
+
     -- 检查是否存在内部配置项名称后直接赋值，不做任何检查
     if nil ~= options[option] then
         self.options[option] = value
@@ -299,7 +305,7 @@ end
 function _M.table(self, table)
     if 'string' ~= type(table) then
         -- table只支持字符串形式的参数
-        utils.exception("[parse error]TABLE name param type error,please use string")
+        utils.exception("[table]first param please use 'no_prefix_table' or 'no_prefix_table as alias_name'")
         return self
     end
 
@@ -327,7 +333,7 @@ end
 function _M.join(self, table, condition, operate, binds)
     -- 检查必选参数
     if utils.empty(table) or utils.empty(condition) then
-        utils.exception('[parse error]JOIN required param `table` or `condition` is empty')
+        utils.exception("[join]first param 'table' or second param 'condition' is missing")
         return self
     end
 
@@ -337,10 +343,6 @@ function _M.join(self, table, condition, operate, binds)
 
     -- 解析join的表名称
     local join_table = parseJoinTable(self, table)
-    if utils.empty(join_table) then
-        utils.exception('[parse error]JOIN parse param `table` occur fatal error')
-        return self
-    end
     table_insert(join, join_table)
 
     -- 处理join操作类型：inner、left、right
@@ -501,7 +503,7 @@ function _M.data(self, column, value)
     if "table" == type(column) then
         for key,val in pairs(column) do
             if "number" == key then
-                utils.exception("data method table param need use associative array, not index array")
+                utils.exception("[data]when first param use array, need associative array, not index array")
             end
             -- 处理字段名
             key = utils.set_back_quote(utils.strip_back_quote(key))
@@ -539,7 +541,7 @@ function _M.limit(self, offset, length)
 
     length = tonumber(length) or nil
     if not offset or not length then
-        utils.exception('[parse error]LIMIT offset and length must be integer')
+        utils.exception("[limit]first param 'offset' and second param 'length' all need type of number")
     else
         self.options.limit = offset .. ',' .. length
     end
@@ -555,7 +557,7 @@ function _M.page(self, page, page_size)
     page_size = tonumber(page_size) or self:getOptions("page_size") -- 若未设置分页的一页大小，则从配置中读取
 
     if "number" ~= type(page) or page_size <= 0 then
-        utils.exception("[parse error]Page method param type must be int or number string")
+        utils.exception("[page]first param 'page' need number, second param 'page_size' need greater than zero or not set")
     end
 
     -- 计算偏移量
@@ -577,7 +579,7 @@ function _M.group(self, column)
     if 'string' == type(column) then
         self.options.group = utils.trim(column)
     else
-        utils.exception('[parse error]GROUP param must be string')
+        utils.exception("[group]only one param 'column' need be type of string")
     end
 
     return self
@@ -591,7 +593,7 @@ function _M.having(self, condition)
         -- having支持聚合函数，这里仅去掉可能两端空白，不做进一步处理
         self.options.having = utils.trim(condition)
     else
-        utils.exception('[parse error]HAVING param must be string')
+        utils.exception("[having]only one param 'condition' need be type of string and support for aggregate functions")
     end
 
     return self

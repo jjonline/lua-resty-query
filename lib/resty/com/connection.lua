@@ -37,7 +37,7 @@ local pool_config = {
 -- 设置配置
 local function _config(_, config_set)
     if utils.empty(config_set) then
-        utils.exception("please set MySQL config")
+        utils.exception("[config]please set MySQL config use associative array")
     end
 
     -- db连接池相关配置
@@ -76,7 +76,7 @@ local function _init(self, config_set)
     -- lua-resty-mysql建立实例和连接
     local instance, err = mysql:new()
     if not instance then
-        utils.exception("failed to instantiate mysql: " .. err)
+        utils.exception("[new]failed to instantiate MySQL:" .. err)
         return nil
     end
 
@@ -94,10 +94,18 @@ local function _connect(self)
     end
 
     --- 执行连接并检查
-    local ok, error, code, state = self.instance:connect(config)
+    local ok, err, code, sqlstate = self.instance:connect(config)
     if not ok then
-        utils.exception("failed to connect: " .. error)
+        -- 处理错误码、mysql错误编号、错误描述
+        if nil ~= code then
+            if not utils.empty(sqlstate) then
+                err = err .. ", error code is " .. code .. " and " .. sqlstate
+            end
+        end
         self.state = DISCONNECTED
+
+        utils.exception("[connect]failed to connect MySQL. " .. err)
+
         return
     end
 
@@ -160,12 +168,10 @@ function _M.fetch(self)
 
     -- 如果是sql错误，则记录错误日志
     if nil ~= code then
-        if utils.empty(sqlstate) then
-            sqlstate = ''
-        else
-            sqlstate = "[" .. sqlstate .. "]"
+        if not utils.empty(sqlstate) then
+            err = err .. ", error code is " .. code .. " and " .. sqlstate
         end
-        utils.logger(code .. "- " .. sqlstate .. err)
+        utils.exception("[fetch]failed to execute SQL statement. " .. err)
     end
 
     return nil
@@ -184,13 +190,11 @@ local function fetchIterator(self, index)
     end
 
     -- 如果是sql错误，则记录错误日志
-    if code ~= nil then
-        if utils.empty(sqlstate) then
-            sqlstate = ''
-        else
-            sqlstate = "[" .. sqlstate .. "]"
+    if nil ~= code then
+        if not utils.empty(sqlstate) then
+            err = err .. ", error code is " .. code .. " and " .. sqlstate
         end
-        utils.logger(code .. "-" .. sqlstate .. err)
+        utils.exception("[fetchMany]failed to execute SQL statement. " .. err)
     end
 
     return nil
@@ -227,12 +231,10 @@ function _M.affectedRows(self)
 
     -- 如果是sql错误，则记录错误日志
     if nil ~= code then
-        if utils.empty(sqlstate) then
-            sqlstate = ''
-        else
-            sqlstate = "[" .. sqlstate .. "]"
+        if not utils.empty(sqlstate) then
+            err = err .. ", error code is " .. code .. " and " .. sqlstate
         end
-        utils.logger(code .. "-" .. sqlstate .. err)
+        utils.exception("[affectedRows]failed to execute SQL statement. " .. err)
     end
 
     return nil
@@ -251,12 +253,10 @@ function _M.lastInsertId(self)
 
     -- 如果是sql错误，则记录错误日志
     if nil ~= code then
-        if utils.empty(sqlstate) then
-            sqlstate = ''
-        else
-            sqlstate = "[" .. sqlstate .. "]"
+        if not utils.empty(sqlstate) then
+            err = err .. ", error code is " .. code .. " and " .. sqlstate
         end
-        utils.logger(code .. "-" .. sqlstate .. err)
+        utils.exception("[lastInsertId]failed to execute SQL statement. " .. err)
     end
 
     return nil
@@ -280,7 +280,8 @@ function _M.destruct(self)
         if ok then
             self.state = DISCONNECTED
         else
-            utils.exception(err)
+            -- 析构失败，不报错，记录日志
+            utils.logger(err)
             return false
         end
         return true;
