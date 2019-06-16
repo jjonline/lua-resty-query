@@ -204,22 +204,58 @@ local function parseWhere(self)
 end
 
 -- 内部方法：解析data方法设置的数据
--- @return string
-local function parseData(self)
-    local data = self:getOptions("data")
+-- @param array data_set  可额外传入仅处理该数据
+-- @return array {field = 'value', field2 = value}
+local function parseData(self, data_set)
+    local data = data_set or self:getOptions("data")
 
-    -- 循环处理关联数组成索引数组
-    if not utils.empty(data) then
-        local _data = {}
-
-        for key,val in pairs(data) do
-            table_insert(_data, key .. "=" .. val)
-        end
-
-        return _data
+    -- 未设置任何数据，返回空数组，由调用方处理
+    if utils.empty(data) then
+        return {}
     end
 
-    return {}
+    -- 循环处理关联数组成索引数组
+    local _data = {}
+
+    -- deal
+    for key,val in pairs(data) do
+        -- 键名称为字符串，依据值类型处理
+        if "string" == type(key) then
+            -- 处理字段
+            key = utils.set_back_quote(utils.strip_back_quote(key))
+
+            -- 处理值
+            if ngx.null == val then
+                -- null
+                _data[key] = "NULL" -- 直接NULL字符串本身，无需携带引号
+            elseif "table" == type(val) then
+                -- 数组值，实现一些特定需求，{"INC", 1}、{"DEC", 1}
+                if 2 == #val then
+                    if val[1] == "INC" then
+                        -- 自增字段需求
+                        _data[key] = key .. " + " .. tonumber(val[2])
+                    elseif val[1] == "DEC" then
+                        -- 自减字段需求
+                        _data[key] = key .. " - " .. tonumber(val[2])
+                    else
+                        -- 需要扩展在此添加
+                    end
+                else
+                    utils.exception("[data]not support operator in data " .. val[1])
+                end
+            else
+                -- 值类型，处理值
+                _data[key] = utils.quote_value(val)
+            end
+        end
+
+        -- 键名为数字，设置批量数据情况直接返回
+        if "number" == type(key) then
+            return data
+        end
+    end
+
+    return _data
 end
 
 -- 解析join关联表
@@ -561,6 +597,13 @@ local function buildUpdate(self)
         utils.exception("[delete]execute update SQL must be set where condition")
     end
 
+    -- deal update data
+    local data     = parseData(self)
+    local data_set = {}
+    for key,val in pairs(data) do
+        table_insert(data_set, key .. " = " .. val)
+    end
+
     local sql = utils.str_replace(
             {
                 "#TABLE#",
@@ -573,7 +616,7 @@ local function buildUpdate(self)
             },
             {
                 parseTable(self),
-                utils.implode(" , ", parseData(self)),
+                utils.implode(" , ", data_set),
                 parseJoin(self),
                 parseWhere(self),
                 parseOrder(self),
@@ -590,7 +633,7 @@ end
 -- @param string
 local function buildInsert(self, is_replace)
     -- 获取要新增的数据
-    local data = self:getOptions("data")
+    local data = parseData(self)
 
     -- 没有数据集对象
     if utils.empty(data) then
@@ -628,11 +671,13 @@ local function buildInsert(self, is_replace)
 end
 
 -- 构造批量insert语句
--- @param array data 批量插入语句的数组，二维数组
 -- @param boolean is_replace mysql特有REPLACE方式插入数据
 -- @return string
-local function buildInsertAll(self, data, is_replace)
-    -- 没有数据集对象
+local function buildInsertAll(self, is_replace)
+    -- get origin multi data
+    local data = parseData(self)
+
+    -- chec origin multi data
     if utils.empty(data) then
         utils.exception("[insertAll]please use insertAll method first param set insert data list")
     end
@@ -648,35 +693,26 @@ local function buildInsertAll(self, data, is_replace)
     local fields = {}
     local values = {}
     for index,val in pairs(data) do
-        if "table" ~= type(val) then
-            utils.exception("[insertAll]data use in multi insert structure is error")
+        if "number" ~= type(index) or "table" ~= type(val) then
+            utils.exception("[insertAll]multi insert data structure error")
         end
 
-        -- 处理字段，使用query对象内置field方法清洗：过滤重复 + 防注入
+        -- parse two level data
+        local item  = parseData(self, val) -- one item data
+        local value = utils.array_values(item) -- one item value
+
+        -- set multi insert fields
         if utils.empty(fields) then
-            self:removeOptions("field")
-
-            self:field(utils.array_keys(val))
-            fields = self:getOptions("field")
-
-            self:removeOptions("field")
+            fields = utils.array_keys(item)
         else
-            -- 检查字段与值长度是否一致
-            if #fields ~= utils.array_count(val) then
+            -- 检查字段长度和值长度是否一致
+            if utils.array_count(item) ~= #value then
                 utils.exception("[insertAll]data fields count not equal values count at " .. index)
             end
         end
 
-        local value_item = {} -- 单条数据处理后的数组
-        for key,value in pairs(val) do
-            if "number" == key then
-                utils.exception("[insertAll]need associative array, not index array")
-            end
-
-            -- 处理单条值
-            table_insert(value_item, utils.quote_value(value))
-        end
-        table_insert(values, "(" .. utils.implode(" , ", value_item) .. ")")
+        -- set multi value item
+        table_insert(values, "( " .. utils.implode(",", value) .. " )")
     end
 
     local sql = utils.str_replace(
@@ -773,28 +809,11 @@ local function buildCount(self, field)
     return buildSelect(self)
 end
 
--- 依据action动作生成拟执行的sql语句
--- @param string action 拟执行的动作，枚举值：insert|select|find|update|delete
--- @return string
-function _M.buildSql(self, action)
-    local _action = string_upper(action)
-    local sql
-
-    if "SELECT" == _action then
-        sql = buildSelect(self)
-    elseif "FIND" == _action then
-        self:limit(1)
-        sql = buildSelect(self)
-        self:removeOptions("limit")
-    elseif "UPDATE" == _action then
-        sql = buildUpdate(self)
-    elseif "INSERT" == _action then
-        sql = buildInsert(self)
-    elseif "DELETE" == _action then
-        sql = buildDelete(self)
-    end
-
-    return sql
+-- 生成拟执行的sql语句而不是执行
+-- @param boolean is_fetch 是否不执行sql，而是返回拟执行的sql，默认true
+function _M.fetchSql(self, is_fetch)
+    self:setOptions("fetch_sql", is_fetch or true)
+    return self
 end
 
 -- 获取最近执行过的最后1次的sql
@@ -839,6 +858,11 @@ function _M.insert(self, data, is_replace)
     -- build insert sql
     local sql = buildInsert(self, is_replace)
 
+    -- not execute sql, rather than return string of SQL
+    if self:getOptions("fetch_sql") then
+        return sql
+    end
+
     -- send sql to MySQL server and execute
     self.connection:execute(sql)
 
@@ -867,6 +891,11 @@ function _M.insertGetId(self, data, is_replace)
     -- build insert sql
     local sql = buildInsert(self, is_replace)
 
+    -- not execute sql, rather than return string of SQL
+    if self:getOptions("fetch_sql") then
+        return sql
+    end
+
     -- send sql to MySQL server and execute
     self.connection:execute(sql)
 
@@ -887,8 +916,18 @@ end
 -- @param boolean is_replace mysql特有REPLACE方式插入数据
 -- @return number 返回插入的总条数
 function _M.insertAll(self, data, is_replace)
+    -- set multi data
+    if not utils.empty(data) then
+        sel:data(data)
+    end
+
     -- build insert sql
-    local sql = buildInsertAll(self, data, is_replace)
+    local sql = buildInsertAll(self, is_replace)
+
+    -- not execute sql, rather than return string of SQL
+    if self:getOptions("fetch_sql") then
+        return sql
+    end
 
     -- send sql to MySQL server and execute
     self.connection:execute(sql)
@@ -931,6 +970,11 @@ function _M.find(self, pri_val)
     -- 生成查找1条的sql
     local sql = buildSelect(self)
 
+    -- not execute sql, rather than return string of SQL
+    if self:getOptions("fetch_sql") then
+        return sql
+    end
+
     -- 清理方法体强制设置的limit条件
     self:removeOptions("limit")
 
@@ -957,6 +1001,11 @@ end
 function _M.select(self)
     -- build select SQL
     local sql = buildSelect(self)
+
+    -- not execute sql, rather than return string of SQL
+    if self:getOptions("fetch_sql") then
+        return sql
+    end
 
     -- send sql to MySQL server and execute
     self.connection:query(sql)
@@ -1009,6 +1058,11 @@ function _M.paginate(self, page, page_size, is_complex)
         sql = sql .. ";" .. buildCount(self)
     end
 
+    -- not execute sql, rather than return string of SQL
+    if self:getOptions("fetch_sql") then
+        return sql
+    end
+
     -- send single or multi sql to MySQL server and execute
     self.connection:query(sql)
 
@@ -1040,6 +1094,11 @@ function _M.count(self, field)
     -- build count select sql, support group sql statement
     local sql = buildCount(self, field)
 
+    -- not execute sql, rather than return string of SQL
+    if self:getOptions("fetch_sql") then
+        return sql
+    end
+
     -- send single or multi sql to MySQL server and execute
     self.connection:query(sql)
 
@@ -1068,6 +1127,11 @@ function _M.update(self, data)
     -- build update SQL
     local sql = buildUpdate(self)
 
+    -- not execute sql, rather than return string of SQL
+    if self:getOptions("fetch_sql") then
+        return sql
+    end
+
     -- send sql to MySQL server and execute
     self.connection:execute(sql)
 
@@ -1080,6 +1144,78 @@ function _M.update(self, data)
     -- self.connection:destruct()
 
     return self.connection:affectedRows()
+end
+
+-- 设置某个字段的值，即仅更新指定条件下的某个字段的值
+-- @param string|array field 拟更新的字段，或则拟更新的键值对关联数组
+-- @param number step  需要更新的值
+-- @return number|nil  执行更新成功返回影响的行数，执行失败返回nil
+function _M.setField(self, field, val)
+    -- clear may exist data
+    self:removeOptions("data")
+
+    -- set data
+    if "table" == type(field) then
+        self:data(field)
+    else
+        self:data(field, val)
+    end
+
+    return self:update()
+end
+
+-- 按步幅增加某个字段值
+-- @param string|array field 需要自增的字段，或多个递增的字段作为键自增步幅为值的数组
+-- @param number step  需要自增的步幅，默认自增1
+-- @return number|nil  执行更新成功返回影响的行数，执行失败返回nil
+function _M.increment(self, field, step)
+    -- 步幅默认1
+    step = step or 1
+
+    -- clear may exist data
+    self:removeOptions("data")
+
+    -- set data
+    if "table" == type(field) then
+        for column,bump in pairs(field) do
+            if "string" ~= type(column) or "number" ~= type(bump) then
+                utils.exception("[increment]increment multi field first param need associative array")
+            end
+            bump = bump or 1
+            self:data(column, {"INC", bump})
+        end
+    else
+        self:data(field, {"INC", step})
+    end
+
+    return self.update(self)
+end
+
+-- 按步幅减少某个字段值
+-- @param string|array field 需要自减的字段，或多个递减的字段作为键自减步幅为值的数组
+-- @param number step  需要自减的步幅，默认自增1
+-- @return number|nil  执行更新成功返回影响的行数，执行失败返回nil
+function _M.decrement(self, field, step)
+    -- 步幅默认1
+    step = step or 1
+
+    -- clear may exist data
+    self:removeOptions("data")
+
+    -- set data
+    if "table" == type(field) then
+        for column,bump in pairs(field) do
+            if "string" ~= type(column) or "number" ~= type(bump) then
+                utils.exception("[increment]increment multi field first param need associative array")
+            end
+            bump = bump or 1
+            self:data(column, {"DEC", bump})
+        end
+    else
+        self:data(field, {"DEC", step})
+    end
+
+    return self.update(self)
 end
 
 -- 执行删除操作，delete不支持通过参数设置删除条件，仅支持通过where方法设置

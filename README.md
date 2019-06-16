@@ -219,6 +219,7 @@ end)
 
 * `data('id', 1)` 字段与值的设置方式，两个参数
 * `data({id = 1, name = "晶晶""})` 数组形式设置多个键值对，一个参数
+* `data({{id = 1, name = "晶晶""}})` 二维数组形式设置批量新增的数据
 
 # select 方法
 
@@ -256,7 +257,7 @@ db:name("user"):find(1)
 db:name("user"):where("id", 1):find()
 
 -- 最终生成的sql均为：
-select * from `prex_user` where `id`=1 limit 1
+select * from `prefix_user` where `id`=1 limit 1
 ````
 
 # update 方法
@@ -267,6 +268,75 @@ select * from `prex_user` where `id`=1 limit 1
 
 * `update()` 通过`data`设置要更新的键值对，通过where系列方法设置更新条件
 * `update(data)` 通过参数设置要更新的键值对，会覆盖由`data`方法设置的值
+
+# setField 方法
+
+功能：快捷更新指定字段方法
+
+用法：
+
+* `setField(field, value)` 更新1个字段。将字段`field`更新为`value`， 通过where系列方法设置更新条件
+* `setField({field1 = value1,field2 = value2})` 更新多个字段。将字段`field1`更新为`value1`同时将字段`field2`更新为`value2`， 通过where系列方法设置更新条件
+
+````
+local db = require "resty.query"
+
+-- 更新设置1个字段
+db:name("user"):where('id', 1):setField("name", "晶晶")
+-- 等价于如下写法
+db:name("user"):where('id', 1):date("name", "晶晶"):update()
+
+-- 生成的sql类型如下
+-- update prefix_user set name = '晶晶' where id=1
+
+-- 更新设置多个字段
+db:name("user"):where('id', 1):setField({name = "晶晶", vip =7})
+-- 等价于如下写法
+db:name("user"):where('id', 1):data({name = "晶晶", vip =7}):update()
+
+-- 生成的sql类型如下
+-- update prefix_user set name = '晶晶', vip = 7 where id=1
+````
+
+# increment 方法
+
+功能：字段值自增方法
+
+用法：
+
+* `increment(field, step)` 通过where系列方法设置更新条件，按`step`步幅自增`field`的值
+* `increment({field1 = step1, field2 = step2})` 通过where系列方法设置更新条件，一次性自增多个字段
+
+> 注意：虽然方法名为`increment`，递增的含义，你仍然可以通过设置`step`参数为负数实现自减的效果，但这样会引起语义上的歧义，如非必要不建议如此操作！
+
+````
+local db = require "resty.query"
+
+-- 自增1个字段
+db:name("user"):where('id', 1):increment("score")
+-- 下方写法等价，第二个参数为自增的步幅，默认值1
+db:name("user"):where('id', 1):increment("score", 1)
+
+-- 生成的sql类型如下
+-- update prefix_user set score = score + 1 where id=1
+
+-- 自增多个字段
+db:name("user"):where('id', 1):increment({score = 1, age = 2})
+
+-- 生成的sql类型如下
+-- update prefix_user set score = score + 1,age = age + 2 where id=1
+````
+
+# decrement 方法
+
+功能：字段值自减方法
+
+用法：
+
+* `decrement(field, step)` 通过where系列方法设置更新条件，按`step`步幅自减`field`的值
+* `decrement({field1 = step1, field2 = step2})` 通过where系列方法设置更新条件，一次性自减多个字段
+
+> 注意：虽然方法名为`decrement`，递减的含义，你仍然可以通过设置`step`参数为负数实现自增的效果，但这样会引起语义上的歧义，如非必要不建议如此操作！
 
 # insert 方法
 
@@ -284,7 +354,8 @@ select * from `prex_user` where `id`=1 limit 1
 
 用法：
 
-* `insertAll(data)` 批量数据只能通过方法体设置，此处不支持使用`data`方法设置批量数据
+* `insertAll()` 批量数据通过`data`方法设置
+* `insertAll(data)` 批量数据通过方法体参数设置，会忽略掉data方法设置的数据
 * `insertAll(data, true)` 通过第二个参数给予true，使用`REPLACE`语法执行新增
 
 ````
@@ -297,6 +368,9 @@ local data = {
 }
 
 db:name("user"):insertAll(data)
+
+-- 或
+db:name("user"):data(data):insertAll()
 ````
 > 务必保证批量数据格式的字段均相一致，批量方法不宜一次性大量插入过多数据
 
@@ -466,15 +540,25 @@ db:getPrimaryField()
 > 此方法为`close`方法的别名，调用任意一者即可
 
 
-# buildSql 方法
+# fetchSql 方法
 
 功能：开发调试，用于生成拟执行的SQL语句
 
 用法：
 
-* `buildSql(action)` 
+* `fetchSql(is_fetch)` 
 
-> 其中action为如下枚举值中的某一个：`insert`、`select`、`find`、`update`、`delete`，不区分大小写
+> 其中`is_fetch`为布尔值，true则返回拟执行的sql字符串，false则无影响，默认值true
+
+````
+local db  = query:name("table")
+local sql = db:where('id', 1):fetchSql():find()
+-- 等价于
+local sql = db:where('id', 1):fetchSql(true):find()
+
+-- sql的值类似如下：
+-- select * from prefix_table where id=1
+````
 
 # getLastSql 方法
 

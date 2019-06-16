@@ -72,7 +72,15 @@ local mt = { __index = _M }
     options.page  = {0,50};
 
     -- data方法设置的key/value键值对值
-    options.data  = {key = value, key1 = value1};
+    options.data  = {
+        key = value,
+        key1 = {'OP', 'value1'}
+    }
+    -- 或批量数据格式
+    options.data  = {
+        {'key'  = 'value'},
+        {'key1' = 'value'},
+    }
 
     -- group子句内部结构的字段名
     options.group = 'column_name';
@@ -83,6 +91,9 @@ local mt = { __index = _M }
 
     -- 是否distinct唯一
     options.distinct = false;
+
+    -- 是否构建并返回sql，而不是执行sql
+    options.fetch_sql = false;
 ]]--
 
 -- 内部option默认结构和默认值
@@ -98,6 +109,7 @@ local options = {
     group     = '',
     having    = '',
     distinct  = false,
+    fetch_sql = false,
     lock      = ''
 }
 
@@ -304,6 +316,7 @@ function _M.new(self, _config)
             group     = '',
             having    = '',
             distinct  = false,
+            fetch_sql = nil,
             lock      = ''
         }
     }
@@ -508,38 +521,41 @@ end
 -- @param string|array 设置的数据内容数组或字符串字段名称
 -- @param string       要设置的数据对象值【使用两个参数形式时第一个参数必须是字段名】
 function _M.data(self, column, value)
-    local data = self.options.data
-
     -- 数组形式设置data
     if "table" == type(column) then
         for key,val in pairs(column) do
-            if "number" == key then
-                utils.exception("[data]when first param use array, need associative array, not index array")
-            end
-            -- 处理字段名
-            key = utils.set_back_quote(utils.strip_back_quote(key))
+            -- 可能是批量数据设置
+            if "number" == type(key) then
+                -- 批量数据，必须是二维数组
+                if "table" ~= type(val) then
+                    -- 下标使用了数字，又不是批量数据：一维数组设置1行数据是需使用关联数组
+                    utils.exception("[data]when use array set one row data, need associative array")
+                end
 
-            -- 转义字段值并使用覆盖方式添加值
-            -- 处理ngx.null的情况，即设置的字段值为NULL
-            if ngx.null == val then
-                data[key] = "NULL" -- 直接NULL字符串本身，无需携带引号
-            else
-                data[key] = utils.quote_value(val)
+                -- 批量数据形式，直接覆盖设置，不合并已有数据
+                self.options.data = column
+
+                return self
             end
+
+            -- recursive deal and call
+            -- key is string and val is string or array
+            self:data(key, val)
         end
     end
 
-    -- 两个参数形式设置key-value
-    if "string" == type(column) and value ~= nil then
-        -- 处理字段名
-        local key = utils.set_back_quote(utils.strip_back_quote(column))
+    -- 字符串形式的执行合并
+    local data = self.options.data
 
-        -- 转义字段值并使用覆盖方式添加值
-        if ngx.null == value then
-            data[key] = "NULL" -- 直接NULL字符串本身，无需携带引号
-        else
-            data[key] = utils.quote_value(value)
+    -- 两个参数形式设置key-value
+    if "string" == type(column) then
+       -- not set value
+        if value == nil then
+            utils.exception("[data]value is missing, do not support variable of nil")
         end
+
+        -- 不处理 直接存储后，使用时统一处理
+        data[column] = value
     end
 
     -- 内部记录设置的data
