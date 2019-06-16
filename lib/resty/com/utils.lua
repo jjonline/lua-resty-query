@@ -83,9 +83,10 @@ local function dump(data, showMetatable, lastCount)
     end
 end
 
--- 检查变量是否为空
+-- 检查变量是否为空，nil|空字符串|false|0|零字符串|ngx.null即NULL|空数组 均为认为是空，即返回true
+-- @param mixed value
 local function empty(value)
-    if value == nil or value == '' or value == false or value == 0 or value == '0' then
+    if value == nil or value == '' or value == false or value == 0 or value == '0' or value == ngx.null then
         return true
     elseif "table" == type(value) then
         return next(value) == nil
@@ -314,6 +315,22 @@ local function array_values(array)
 
     return false
 end
+-- 获取1个数组的长度，支持索引数组和关联数组即对象
+-- @param array array 需计数的数组
+-- @return number
+local function array_count(array)
+    if "table" == type(array) then
+        local count = 0
+
+        for _,_ in pairs(array) do
+            count = count + 1
+        end
+
+        return count
+    end
+
+    return false
+end
 
 -- 检查1个table是否为数组，即数字索引的table
 local function table_is_array(t)
@@ -437,6 +454,7 @@ return {
     array_merge      = array_merge,
     array_keys       = array_keys,
     array_values     = array_values,
+    array_count      = array_count,
     table_is_array   = table_is_array,
     in_array         = in_array,
     quote_value      = quote_value,

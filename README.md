@@ -244,7 +244,20 @@ end)
 
 用法：
 
-* `find()` 执行select查询，find方法不支持任何参数
+* `find()` 执行select查询1条数据，不使用任何参数形式，使用where方法设置查询条件
+* `find(pri_value)` 执行select查询1条数据，传入唯一的1个参数1个值，使用主键字段按该参数值查询
+
+````
+local db = require "resty.query"
+-- 假设user表的主键字段为id
+db:name("user"):find(1)
+
+-- 等价于
+db:name("user"):where("id", 1):find()
+
+-- 最终生成的sql均为：
+select * from `prex_user` where `id`=1 limit 1
+````
 
 # update 方法
 
@@ -265,6 +278,27 @@ end)
 * `insert(data)` 通过参数设置要新增的键值对，会覆盖由`data`方法设置的值
 * `insert(data, true)` 通过第二个参数给予true，使用`REPLACE`语法执行新增，若不想通过第一个参数赋值，给予一个空数组`{}`即可
 
+# insertAll 方法
+
+功能：执行insert方法批量新增多条数据
+
+用法：
+
+* `insertAll(data)` 批量数据只能通过方法体设置，此处不支持使用`data`方法设置批量数据
+* `insertAll(data, true)` 通过第二个参数给予true，使用`REPLACE`语法执行新增
+
+````
+local db = require "resty.query"
+
+-- data参数格式
+local data = {
+    {name="y",sex=1},
+    {name="j",sex=2}
+}
+
+db:name("user"):insertAll(data)
+````
+> 务必保证批量数据格式的字段均相一致，批量方法不宜一次性大量插入过多数据
 
 # insertGetId 方法
 
@@ -318,6 +352,7 @@ end)
 
 回滚1个事务
 
++++
 
 使用范例：
 
@@ -340,6 +375,8 @@ db:rollback()
 
 ````
 local db = query:new():table("table")
+-- 或
+-- local db = query:name("table")
 
 -- 开启事务
 db:startTrans()
@@ -360,6 +397,54 @@ end
 
 ````
 
+# getFields 方法
+
+功能：获取当前表的所有字段信息数组
+
+用法：
+
+* `getFields()` 
+
+````
+local db = query:name("table")
+
+db:getFields()
+
+-- 返回类似如下结构
+{
+    id = {
+		"not_null" = true,
+		"primary" = true,
+		"auto_increment" = true,
+		"default" = userdata: NULL,
+		"type" = "int(11)",
+	},
+	name = {
+		"not_null" = true,
+		"primary" = false,
+		"auto_increment" = false,
+		"default" = "",
+		"type" = "varchar(32)",
+	},
+}
+````
+
+# getPrimaryField 方法
+
+功能：获取当前表的主键字段名称
+
+用法：
+
+* `getPrimaryField()` 
+
+````
+local db = query:name("table")
+
+db:getPrimaryField()
+
+-- 返回主键字段名称，譬如 id， 若表并未设置主键字段，则返回空字符串
+````
+
 # reset 方法
 
 功能：重置query对象，避免上一次执行后的数据污染
@@ -368,7 +453,7 @@ end
 
 * `reset()` 
 
-> 正常情况下，无需调用方法，底层会自动执行清理，此方法为`removeOptions()`无参数方法的的别名
+> 正常情况下，无需主动调用该方法，底层会自动执行清理，此方法为`removeOptions()`无参数方法的的别名
 
 # destruct 方法
 

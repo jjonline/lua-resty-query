@@ -47,6 +47,7 @@ local builder      = require "resty.com.builder"
 local _M           = { version = "0.0.1" }
 local mt           = { __index = _M }
 local LAST_SQL     = 'no exist last SQL' -- 全局记录最后执行的sql
+local FIELDS       = {} -- 全局记录表本身的字段信息 { table_name1 = {}, table_name2 = {} }
 
 -- 设置最近1次执行过的sql，全局模式
 local function set_last_sql(sql)
@@ -62,7 +63,7 @@ local selectSQL    = "SELECT#DISTINCT# #FIELD# FROM #TABLE##JOIN##WHERE##GROUP##
 local insertSQL    = "#INSERT# INTO #TABLE# (#FIELD#) VALUES (#DATA#)"
 local updateSQL    = "UPDATE #TABLE# SET #SET##JOIN##WHERE##ORDER##LIMIT# #LOCK#"
 local deleteSQL    = "DELETE FROM #TABLE##JOIN##WHERE##ORDER##LIMIT# #LOCK#"
-local insertAllSQL = "#INSERT# INTO #TABLE# (#FIELD#) #DATA#"
+local insertAllSQL = "#INSERT# INTO #TABLE# (#FIELD#) VALUES #DATA#"
 
 -- 内部方法：解析是否distinct唯一
 -- @return string
@@ -302,6 +303,80 @@ local function parseLock(self)
     end
 
     return " " .. lock .. " "
+end
+
+-- 内部方法，获取数据表字段新
+-- @return array
+local function autoGetFields(self)
+    -- get table
+    local table = self:getOptions("table")
+
+    -- check
+    if utils.empty(table) then
+        utils.exception("[getFields]please set table name at first when get all this table fields info")
+    end
+
+    -- 已处理过，直接使用
+    if not utils.empty(FIELDS[table]) then
+        return FIELDS[table]
+    end
+
+    -- execute sql get fields info
+    local sql = "SHOW COLUMNS FROM " .. table
+
+    -- send sql to MySQL server and execute
+    self.connection:query(sql)
+
+    -- self.connection:destruct()
+
+    -- fetch MySQL server return result
+    local result = self.connection:fetch()
+
+    -- deal structure
+    local fields = {}
+    local info   = {}
+    for _, val in pairs(result) do
+        local _name  = val.Field
+
+        -- 设置主键
+        if val.Key == "PRI" then
+            fields.primary = _name
+        end
+
+        -- 设置每个字段详情
+        info[_name] = {
+            primary        = "PRI" == val.Key, -- boolean 是否为主键
+            type           = val.Type,
+            default        = val.Default,
+            not_null       = "NO" == val.Null, -- boolean 是否能为null
+            auto_increment = "auto_increment" == val.Extra, -- boolean 是否自增
+        }
+    end
+
+    --[[
+    -- 存储结构
+    {
+        primary = "id", -- 该表的主键
+        fields  = {
+            id = {
+                type = "int(11)", -- 字段类型
+                not_null = true, -- 是否允许为null
+                default = "", -- 默认值
+                primary = false, -- 是否主键
+                auto_increment = false -- 是否自增键
+            } -- 该表每个字段的信息
+        },
+    }
+    -]]
+    fields.fields = info
+
+    -- set to local variable
+    FIELDS[table] = fields
+
+    -- record last SQL
+    set_last_sql(sql)
+
+    return fields
 end
 
 -- 实例化1个新的底层connection对象
@@ -552,6 +627,77 @@ local function buildInsert(self, is_replace)
     return utils.rtrim(sql)
 end
 
+-- 构造批量insert语句
+-- @param array data 批量插入语句的数组，二维数组
+-- @param boolean is_replace mysql特有REPLACE方式插入数据
+-- @return string
+local function buildInsertAll(self, data, is_replace)
+    -- 没有数据集对象
+    if utils.empty(data) then
+        utils.exception("[insertAll]please use insertAll method first param set insert data list")
+    end
+
+    -- 依据replace条件调度新增语句的方式
+    if is_replace then
+        is_replace = "REPLACE"
+    else
+        is_replace = "INSERT"
+    end
+
+    -- deal multi data
+    local fields = {}
+    local values = {}
+    for index,val in pairs(data) do
+        if "table" ~= type(val) then
+            utils.exception("[insertAll]data use in multi insert structure is error")
+        end
+
+        -- 处理字段，使用query对象内置field方法清洗：过滤重复 + 防注入
+        if utils.empty(fields) then
+            self:removeOptions("field")
+
+            self:field(utils.array_keys(val))
+            fields = self:getOptions("field")
+
+            self:removeOptions("field")
+        else
+            -- 检查字段与值长度是否一致
+            if #fields ~= utils.array_count(val) then
+                utils.exception("[insertAll]data fields count not equal values count at " .. index)
+            end
+        end
+
+        local value_item = {} -- 单条数据处理后的数组
+        for key,value in pairs(val) do
+            if "number" == key then
+                utils.exception("[insertAll]need associative array, not index array")
+            end
+
+            -- 处理单条值
+            table_insert(value_item, utils.quote_value(value))
+        end
+        table_insert(values, "(" .. utils.implode(" , ", value_item) .. ")")
+    end
+
+    local sql = utils.str_replace(
+            {
+                "#INSERT#",
+                "#TABLE#",
+                "#FIELD#",
+                "#DATA#",
+            },
+            {
+                is_replace,
+                parseTable(self),
+                utils.implode(" , ", fields),
+                utils.implode(" , ", values)
+            },
+            insertAllSQL
+    )
+
+    return utils.rtrim(sql)
+end
+
 -- 构建delete的sql语句
 -- @param string
 local function buildDelete(self)
@@ -652,8 +798,32 @@ function _M.buildSql(self, action)
 end
 
 -- 获取最近执行过的最后1次的sql
-function _M.getLastSql(self)
+function _M.getLastSql(_)
     return get_last_sql()
+end
+
+-- 获取数据表的字段信息数组
+-- @return array 以字段名称作为下标的关联数组
+function _M.getFields(self)
+    --[[
+    -- 返回值结构
+    {
+        id = {
+            type = "int(11)", -- 字段类型
+            not_null = true, -- 是否允许为null
+            default = "", -- 默认值
+            primary = false, -- 是否主键
+            auto_increment = false -- 是否自增键
+        } -- 该表每个字段的信息
+    }
+    -]]
+    return autoGetFields(self).fields
+end
+
+-- 获取数据表的主键字段
+-- @return string 主键字段名称，若未设置主键字段则返回空字符串
+function _M.getPrimaryField(self)
+    return autoGetFields(self).primary or ''
 end
 
 -- 执行单条数据新增
@@ -673,7 +843,7 @@ function _M.insert(self, data, is_replace)
     self.connection:execute(sql)
 
     -- remove all setOptions
-    self:removeOptions();
+    self:removeOptions()
 
     -- self.connection:destruct()
 
@@ -701,7 +871,7 @@ function _M.insertGetId(self, data, is_replace)
     self.connection:execute(sql)
 
     -- remove all setOptions
-    self:removeOptions();
+    self:removeOptions()
 
     -- self.connection:destruct()
 
@@ -712,11 +882,51 @@ function _M.insertGetId(self, data, is_replace)
     return self.connection:lastInsertId()
 end
 
--- 执行单条查询，find不支持通过参数设置查询条件，仅支持通过where方法设置
+-- 构造批量insert语句
+-- @param array data 批量插入语句的数组，二维数组
+-- @param boolean is_replace mysql特有REPLACE方式插入数据
+-- @return number 返回插入的总条数
+function _M.insertAll(self, data, is_replace)
+    -- build insert sql
+    local sql = buildInsertAll(self, data, is_replace)
+
+    -- send sql to MySQL server and execute
+    self.connection:execute(sql)
+
+    -- remove all setOptions
+    self:removeOptions()
+
+    -- self.connection:destruct()
+
+    -- record last SQL
+    set_last_sql(sql)
+
+    -- fetch MySQL server execute result info
+    return self.connection:affectedRows()
+end
+
+-- 执行单条查询，find唯一的可选参数仅支持主键查询，底层自动获取主键，传入主键值即可
+-- @return string|number pri_val 可选的按主键快捷查询的主键单个值
 -- @return array|nil 查找到返回一维数组，查找不到返回nil
-function _M.find(self)
+function _M.find(self, pri_val)
     -- 查找1条，强制覆盖limit条件为1条
     self:setOptions("limit", 1);
+
+    -- 如果有传值
+    if not utils.empty(pri_val) then
+        if "table" == type(pri_val) then
+            utils.exception("[find]select one record use primary key auto, param need string or number")
+        end
+
+        -- 设置主键查询
+        local pri_key = self:getPrimaryField()
+        if utils.empty(pri_key) then
+            utils.exception("[find]do not have primary key field in " .. self:getOptions("table"))
+        end
+
+        -- add primary key where
+        self:where(pri_key, "=", pri_val)
+    end
 
     -- 生成查找1条的sql
     local sql = buildSelect(self)
@@ -731,7 +941,7 @@ function _M.find(self)
     local result = self.connection:fetch()
 
     -- remove all setOptions
-    self:removeOptions();
+    self:removeOptions()
 
     -- record last SQL
     set_last_sql(sql)
@@ -752,7 +962,7 @@ function _M.select(self)
     self.connection:query(sql)
 
     -- remove all setOptions
-    self:removeOptions();
+    self:removeOptions()
 
     -- self.connection:destruct()
 
@@ -936,7 +1146,7 @@ end
 -- 执行原生sql的命令--insert、update、delete、create、alter等
 -- @param string sql   SQL语句
 -- @param array  binds 可选的参数绑定，SQL语句中的问号(?)依次使用该数组参数替换
--- @return array
+-- @return number 返回执行的1条或多条sql总的影响的行数
 function _M.execute(self, sql, binds)
     -- check
     if utils.empty(sql) then

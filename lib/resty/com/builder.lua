@@ -24,12 +24,6 @@ local mt = { __index = _M }
         'table.column2 as column3'
     }
 
-    -- 表别名
-    options.alias = {
-        {full_table_name1, 'alias_name1'},
-        {full_table_name2, 'alias_name2'}
-    }
-
     -- 设置好的表完整名称，可带别名
     options.table = 'full_table_name[ as alias_name]'
     -- 或者 options.table = 'full_table_name as alias_name'
@@ -244,7 +238,7 @@ local function _setOptions(self, option, value)
         self.options[option] = value
     end
 
-    -- 返回数组
+    -- 返回对象本身
     return self
 end
 _M.setOptions = _setOptions
@@ -526,7 +520,12 @@ function _M.data(self, column, value)
             key = utils.set_back_quote(utils.strip_back_quote(key))
 
             -- 转义字段值并使用覆盖方式添加值
-            data[key] = utils.quote_value(val)
+            -- 处理ngx.null的情况，即设置的字段值为NULL
+            if ngx.null == val then
+                data[key] = "NULL" -- 直接NULL字符串本身，无需携带引号
+            else
+                data[key] = utils.quote_value(val)
+            end
         end
     end
 
@@ -536,7 +535,11 @@ function _M.data(self, column, value)
         local key = utils.set_back_quote(utils.strip_back_quote(column))
 
         -- 转义字段值并使用覆盖方式添加值
-        data[key] = utils.quote_value(value)
+        if ngx.null == value then
+            data[key] = "NULL" -- 直接NULL字符串本身，无需携带引号
+        else
+            data[key] = utils.quote_value(value)
+        end
     end
 
     -- 内部记录设置的data
