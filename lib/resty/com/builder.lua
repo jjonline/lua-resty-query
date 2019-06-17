@@ -350,7 +350,7 @@ function _M.field(self, fields)
 end
 
 -- join查询设置
--- @param string table     要join关联的表名称 格式2:xxx 格式2:xxx xxx1 格式3:xxx as xxx1
+-- @param string table     要join关联的表名称 格式1:xxx 格式2:xxx xxx1 格式3:xxx as xxx1
 -- @param string condition 关联ON后方的条件，字符串形式；若有变量拼接需求，请使用第4个参数，以防注入风险
 -- @param string operate   join的类型，inner|left|right，默认inner
 -- @param array  binds     可选的对condition进行参数绑定的额外变量参数，condition中必须使用问号(?)占位

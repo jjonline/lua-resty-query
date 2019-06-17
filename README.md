@@ -29,6 +29,59 @@ config结构
 }
 ````
 
+示例：
+````
+local query = require "resty.query"
+
+local config = {
+    host      = "127.0.0.1",
+    port      = 3306,
+    socket    = "",
+    database  = "",
+    username  = "",
+    password  = "",
+    charset   = 'utf8mb4',
+    collation = 'utf8mb4_general_ci',
+    prefix    = "",
+    strict    = true,
+    engine    = nil,
+    page_size = 10,
+    pool_size = 10,
+    pool_timeout = 10000,
+}
+
+local db = query:new(config):table("resty_query")
+
+-- 等价于
+-- local db = query:new("resty_query"):setConfig(config)
+
+local res = db:where('id',1):find()
+
+-- 生成的sql类似
+-- SELECT * FROM `lua_resty_query` WHERE `id`=1  LIMIT 1
+
+--- 若查询到了数据，res的结构类似：
+{
+	update_time = "2019-06-17 20:01:36",
+	id = 1,
+	name = "晶晶",
+	create_time = "2019-06-15 00:13:22",
+	null_field = userdata: NULL,
+	gender = "男",
+	age = 1,
+	json_field = userdata: NULL,
+	user_name = "jjonline",
+}
+
+-- 此时query对象已被实例化，再次生成1个对象可无需传配置参数
+
+local db1 = query:name("resty_query")
+
+-- 直接执行查询，底层自动重用上方设置的配置参数
+db1:find(2)
+
+````
+
 # name方法
 
 功能：快捷实例化query对象并设置无前缀数据表名称
@@ -67,6 +120,45 @@ config结构
 > 数组形式多个数组元素传递多个字段
 
 > `as`关键字不区分大小写，建议全部大写
+
+示例：
+````
+local query = require "resty.query"
+
+local config = {
+    host      = "127.0.0.1",
+    port      = 3306,
+    socket    = "",
+    database  = "",
+    username  = "",
+    password  = "",
+    charset   = 'utf8mb4',
+    collation = 'utf8mb4_general_ci',
+    prefix    = "",
+    strict    = true,
+    engine    = nil,
+    page_size = 10,
+    pool_size = 10,
+    pool_timeout = 10000,
+}
+
+local db = query:new(config):table("resty_query")
+
+local res = db:field("id as user_id")
+        :field({"name", "gender as sex"})
+        :where('id',1)
+        :find()
+
+-- 生成的sql类似
+-- SELECT `id` AS `user_id`,`name`,`gender` AS `sex` FROM `lua_resty_query` WHERE `id`=1  LIMIT 1
+
+-- res结构则变化为：
+{
+	sex = "男",
+	name = "晶晶",
+	user_id = 1,
+}
+````
 
 # join 方法
 
@@ -117,7 +209,7 @@ config结构
 * `whereNotBetween('table.field',{1,10})` 快捷`not between`查询
 * `whereLike('table.field','%晶晶')` 快捷`like`查询
 * `whereNotLike('table.field','%晶晶%')` 快捷`not like`查询
-* `whereExp('table.field','IN (1,2)')` 快捷`EXP`查询
+* `whereExp('table.field',' IN (1,2)')` 快捷`EXP`查询
 
 函数回调参数形式
 
@@ -144,6 +236,126 @@ local where_res = db2:where(where):select()
 
 -- 构造的sql类似：
 SELECT * FROM `lua_resty_query` AS `user` WHERE (`age` BETWEEN '0' AND '11') AND `user`.`id` IN ('1','2','3')
+
+其实就等价于：
+
+db2:where("user.id", "IN", "1,2,3"):where("age", "BETWEEN", {0,11})
+````
+
+## [不]等于查询(=、<>)
+
+示例：
+````
+db:where('id',"=",1):find() 
+````
+等价于
+````
+local res = db:where('id',1):find()
+````
+生成的SQL为：
+````
+SELECT * FROM `lua_resty_query` WHERE `id`=1  LIMIT 1
+````
+
+## 比较查询(>、>=、<、<=)
+
+````
+db:where('id',">",1:find() 
+````
+生成的SQL为：
+````
+SELECT * FROM `lua_resty_query` WHERE `id`>1  LIMIT 1
+````
+
+## [not] in查询
+
+````
+db:where('id',"IN",{1,2,3}):find() 
+-- 或
+db:where('id',"IN",'1,2,3'):find() 
+-- 或
+db:whereIn('id', '1,2,3'):find() 
+````
+生成的SQL为：
+````
+SELECT * FROM `lua_resty_query` WHERE `id` IN ('1','2','3')  LIMIT 1
+````
+
+## [not] like查询
+
+````
+db:where('name',"LIKE","%晶%"):find() 
+-- 或
+db:whereLike('name', "%晶%")
+````
+生成的SQL为：
+````
+SELECT * FROM `lua_resty_query` WHERE `name` LIKE '%晶%'  LIMIT 1
+````
+
+## [not] BETWEEN查询
+
+````
+db:where('id',"BETWEEN",{10,200}):find() 
+-- 或
+db:where('id',"BETWEEN",'100,200'):find() 
+-- 或
+db:whereBetween('id', {100,200}):find()
+````
+生成的SQL为：
+````
+SELECT * FROM `lua_resty_query` WHERE (`id` BETWEEN '100' AND '200')  LIMIT 1
+````
+
+## [NOT] NULL查询
+
+````
+db:where('id',"NULL"):find() 
+-- 或
+db:whereNull('id'):find() 
+````
+生成的SQL为：
+````
+SELECT * FROM `lua_resty_query` WHERE `id` IS NULL LIMIT 1
+````
+not null写法:
+````
+db:where('id',"NOT NULL"):find() 
+-- 或
+db:whereNotNull('id'):find() 
+````
+生成的SQL为：
+````
+SELECT * FROM `lua_resty_query` WHERE `id` IS NOT NULL LIMIT 1
+````
+若需要查询`id`的值为`NULL`字符串的写法如下：
+````
+db:where('id',"=", "NULL"):find() 
+````
+生成的SQL为：
+````
+SELECT * FROM `lua_resty_query` WHERE `id`='NULL' LIMIT 1
+````
+
+# EXP表达式查询
+
+> EXP表达式，即第三个参数作为sql的原生字符串的一部分，底层不做任何处理，实现一些原生SQL构造，这里要主要的是尽量使用系统提供的参数绑定机制，避免注入风险
+
+````
+db:where('id',"EXP", " IN(1,2)"):select() 
+-- 或
+db:whereExp('id', " IN(1,2)"):select() 
+-- 注意参数前方的空格
+````
+生成的SQL为：
+````
+SELECT * FROM `lua_resty_query` WHERE `id` IN(1,2)
+````
+若exp字符串中有拼接变量需求，合理利用系统提供的参数绑定机制，避免注入风险：
+````
+local exp_val = " IN(?,?)"
+exp_val = utils.db_bind_value(exp_val, {1,2})
+db:where('id',"EXP", exp_val):select() 
 ````
 
 # order 方法
