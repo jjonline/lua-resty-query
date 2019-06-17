@@ -132,6 +132,19 @@ end)
 ````
 构造的sql为：`(id=1 OR cid=2) AND (id= 3 OR name LIKE '%晶晶%')`
 
+* `where({可选的表名.字段名 = {操作符, 查询值}})` 数组形式
+````
+local db2 = db:name("resty_query as user")
+local where = {}
+    
+where["user.id"] = {"in", "1,2,3"}
+where["age"] = {"between", {0,11}}
+    
+local where_res = db2:where(where):select()
+
+-- 构造的sql类似：
+SELECT * FROM `lua_resty_query` AS `user` WHERE (`age` BETWEEN '0' AND '11') AND `user`.`id` IN ('1','2','3')
+````
 
 # order 方法
 
@@ -219,7 +232,7 @@ end)
 
 * `data('id', 1)` 字段与值的设置方式，两个参数
 * `data({id = 1, name = "晶晶""})` 数组形式设置多个键值对，一个参数
-* `data({{id = 1, name = "晶晶""}})` 二维数组形式设置批量新增的数据
+* `data({{id = 1, name = "晶晶"}})` 二维数组形式设置批量新增的数据
 
 # select 方法
 

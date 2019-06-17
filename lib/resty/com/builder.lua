@@ -135,7 +135,7 @@ local config  = {
 -- @param string table_name 参数形式：no_prefix_table|no_prefix_table as table_alias
 -- @return string `with_prefix_table`|`with_prefix_table` AS `table_alias`
 local parseJoinTable = function(self, table_name)
-   -- 去除可能的两端空白 后 按空格截取后长度之可能为1、2、3的数组
+    -- 去除可能的两端空白 后 按空格截取后长度之可能为1、2、3的数组
     local _table_array = utils.explode('%s+', utils.trim(table_name));
 
     -- 使用了as语法显式设置别名
@@ -316,7 +316,7 @@ function _M.new(self, _config)
             group     = '',
             having    = '',
             distinct  = false,
-            fetch_sql = nil,
+            fetch_sql = false,
             lock      = ''
         }
     }
@@ -350,10 +350,10 @@ function _M.field(self, fields)
 end
 
 -- join查询设置
--- @param string table           要join关联的表名称，格式：xxx xxx1
--- @param string|where condition 关联提交，字符串形式或者where对象
--- @param string operate         join的类型，inner|left|right，默认inner
--- @param array binds            可选的对condition进行参数绑定的额外变量参数，condition中必须使用问号(?)占位
+-- @param string table     要join关联的表名称 格式2:xxx 格式2:xxx xxx1 格式3:xxx as xxx1
+-- @param string condition 关联ON后方的条件，字符串形式；若有变量拼接需求，请使用第4个参数，以防注入风险
+-- @param string operate   join的类型，inner|left|right，默认inner
+-- @param array  binds     可选的对condition进行参数绑定的额外变量参数，condition中必须使用问号(?)占位
 function _M.join(self, table, condition, operate, binds)
     -- 检查必选参数
     if utils.empty(table) or utils.empty(condition) then
@@ -362,7 +362,7 @@ function _M.join(self, table, condition, operate, binds)
     end
 
     -- join构造的格式
-    -- {'table','operate', 'condition'}
+    -- {'table', 'operate', 'condition'}
     local join = {}
 
     -- 解析join的表名称
@@ -370,12 +370,15 @@ function _M.join(self, table, condition, operate, binds)
     table_insert(join, join_table)
 
     -- 处理join操作类型：inner、left、right
-    if utils.empty(operate) then
-        table_insert(join, 'INNER')
-    elseif 'left' == string_lower(operate) then
+    operate = string_lower(operate)
+
+    if "left" == operate then
         table_insert(join, 'LEFT')
-    else
+    elseif "right" == operate then
         table_insert(join, 'RIGHT')
+    else
+        -- enum variable error or nil, use default inner statement
+        table_insert(join, 'INNER')
     end
 
     -- join条件里有参数绑定
@@ -383,7 +386,7 @@ function _M.join(self, table, condition, operate, binds)
         condition = utils.db_bind_value(condition, binds)
     end
 
-    table_insert(join,condition)
+    table_insert(join, condition)
 
     -- 将解析的结果保存
     table_insert(self.options.join, join)

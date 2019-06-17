@@ -37,7 +37,6 @@ local tonumber     = tonumber
 local table_insert = table.insert
 local string_sub   = string.sub
 local string_len   = string.len
-local string_upper = string.upper
 local setmetatable = setmetatable
 local getmetatable = getmetatable
 local utils        = require "resty.com.utils"
@@ -126,7 +125,7 @@ local function buildWhereItem(logic, item)
     elseif "BETWEEN" == operate then
         return logic .. " (" ..column .. " BETWEEN " .. condition[1] .. " AND " .. condition[2] .. ")"
     elseif "NOT BETWEEN" == operate then
-        return logic .. " (" ..column .. " BETWEEN " .. condition[1] .. " AND " .. condition[2] .. ")"
+        return logic .. " (" ..column .. " NOT BETWEEN " .. condition[1] .. " AND " .. condition[2] .. ")"
     elseif utils.in_array(operate, {"LIKE", "NOT LIKE"}) then
         return logic .. " " .. column .. " " .. operate .. " " .. condition
     elseif utils.in_array(operate, {"IN", "NOT IN"}) then
@@ -154,7 +153,8 @@ local function buildWhere(this)
         -- where内层循环
         for _,item in pairs(list) do
             if "string" == type(item) then
-                -- exp原始值类型解析，字面量原始值类型，可能会导致注入
+                -- exp原始值类型解析，字面量原始值类型
+                -- 可使用 utils.db_bind_value 执行值绑定，而不是直接拼接，以防止注入风险
                 table_insert(where_arr, logic .. " " .. item)
             elseif "function" == type(item) then
                 -- +++++++++++++++++++++++++++++++++++++++
@@ -205,7 +205,7 @@ end
 
 -- 内部方法：解析data方法设置的数据
 -- @param array data_set  可额外传入仅处理该数据
--- @return array {field = 'value', field2 = value}
+-- @return array {field = 'value', field2 = value} or {{},{}}
 local function parseData(self, data_set)
     local data = data_set or self:getOptions("data")
 
@@ -233,10 +233,10 @@ local function parseData(self, data_set)
                 if 2 == #val then
                     if val[1] == "INC" then
                         -- 自增字段需求
-                        _data[key] = key .. " + " .. tonumber(val[2])
+                        _data[key] = key .. " + " .. tonumber(val[2] or 1)
                     elseif val[1] == "DEC" then
                         -- 自减字段需求
-                        _data[key] = key .. " - " .. tonumber(val[2])
+                        _data[key] = key .. " - " .. tonumber(val[2] or 1)
                     else
                         -- 需要扩展在此添加
                     end
@@ -677,7 +677,7 @@ local function buildInsertAll(self, is_replace)
     -- get origin multi data
     local data = parseData(self)
 
-    -- chec origin multi data
+    -- check origin multi data
     if utils.empty(data) then
         utils.exception("[insertAll]please use insertAll method first param set insert data list")
     end

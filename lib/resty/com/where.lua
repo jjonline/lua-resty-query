@@ -127,12 +127,28 @@ function _M.removeOptions(self)
 end
 
 -- where构造查询条件核心方法
--- @param string column  字段名称
--- @param string operate 操作符
+-- @param string|array column    字段名称或数组形式的参数
+-- @param string       operate   操作符
 -- @param string|array condition 操作条件
 function _M.where(self, column, operate, condition)
-    if not column then
-        utils.exception("[where]method first param is missing")
+    if utils.empty(column) then
+        utils.exception("[where]method param is missing")
+    end
+
+    -- array set where condition in one param
+    -- 单个条件关联数组形式: { column = {operate, condition} }
+    -- 多个条件关联数组形式: { column1 = {operate, condition}}, column2 = {operate, condition} }
+    if "table" == type(column) then
+        for key, val in pairs(column) do
+            -- { column = {operate, condition} }
+            if "table" == type(val) and 2 == #val then
+                self:where(key, val[1], val[2])
+            else
+                utils.exception("[where]associative array need like { column = { operate, condition} }")
+            end
+        end
+        -- array set return
+        return self
     end
 
     -- 处理变量
@@ -160,7 +176,7 @@ function _M.where(self, column, operate, condition)
             elseif utils.in_array(_operate, {'BETWEEN', 'NOT BETWEEN'}) then
                 table_insert(_where, parseBetweenVal(condition))
             elseif "EXP" == _operate then
-                -- 构造成字符串，EXP模式可能会导致注入，尽量避免使用
+                -- 构造成字符串，EXP模式设置condition时尽量使用参数绑定模式处理参数，不要直接拼接
                 _where = utils.set_back_quote(utils.strip_back_quote(column)) .. utils.rtrim(condition)
             else
                 -- 将operate参数传递过来的值quote之后存储
@@ -185,8 +201,24 @@ end
 -- @param string operate 操作符
 -- @param string|array condition 操作条件
 function _M.whereOr(self, column, operate, condition)
-    if not column then
-        utils.exception("[whereOr]method first param is missing")
+    if utils.empty(column) then
+        utils.exception("[where]method param is missing")
+    end
+
+    -- array set where condition in one param
+    -- 单个条件关联数组形式: { column = {operate, condition} }
+    -- 多个条件关联数组形式: { column1 = {operate, condition}}, column2 = {operate, condition} }
+    if "table" == type(column) then
+        for key, val in pairs(column) do
+            -- { column = {operate, condition} }
+            if "table" == type(val) and 2 == #val then
+                self:whereOr(key, val[1], val[2])
+            else
+                utils.exception("[where]associative array need like { column = { operate, condition} }")
+            end
+        end
+        -- array set return
+        return self
     end
 
     -- 处理变量
