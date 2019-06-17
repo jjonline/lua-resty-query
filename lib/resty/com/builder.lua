@@ -24,9 +24,8 @@ local mt = { __index = _M }
         'table.column2 as column3'
     }
 
-    -- 设置好的表完整名称，可带别名
-    options.table = 'full_table_name[ as alias_name]'
-    -- 或者 options.table = 'full_table_name as alias_name'
+    -- 无前缀的表名称和可能存在的表别名，不存在或未设置别名，则数组第2个元素为空字符串
+    options.table = {full_table_name, alias_name}
 
     -- join查询内部结构
     options.join = {
@@ -98,7 +97,7 @@ local mt = { __index = _M }
 
 -- 内部option默认结构和默认值
 local options = {
-    table     = '',
+    table     = {},
     field     = {},
     where     = { AND = {}, OR  = {} },
     join      = {},
@@ -305,7 +304,7 @@ function _M.new(self, _config)
         _field  = field:new(),
         _where  = where_class:new(),
         options = {
-            table     = '',
+            table     = {},
             field     = {},
             where     = { AND = {}, OR  = {} },
             join      = {},
@@ -324,8 +323,8 @@ function _M.new(self, _config)
     return setmetatable(_self, mt)
 end
 
---- 设置表名称
---- @param string table 不带前缀的数据表名称
+--- 设置表名称，不支持点语法设置database，仅支持空格或AS关键词
+--- @param string table 不带前缀的数据表名称 形式：table|table alias|table AS alias
 function _M.table(self, table)
     if 'string' ~= type(table) then
         -- table只支持字符串形式的参数
@@ -333,8 +332,11 @@ function _M.table(self, table)
         return self
     end
 
-    -- 拼接成完整表名称后反引号包裹
-    self.options.table = utils.set_back_quote(self._config.prefix .. utils.strip_back_quote(table))
+    -- 解析字符串成为两个元素的索引数组，直接存储，使用的时候处理
+    local _table = utils.parse_key(table)
+
+    self.options.table = _table
+
     return self
 end
 

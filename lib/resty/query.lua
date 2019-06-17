@@ -98,15 +98,29 @@ local function parseField(self)
 end
 
 -- 内部方法：解析数据表名
+-- @param boolean without_alias 是否忽略别名，默认不忽略
 -- @return string
-local function parseTable(self)
+local function parseTable(self, without_alias)
     -- 获取并检测是否设置表
     local table = self:getOptions("table")
+
     if utils.empty(table) then
-        utils.exception("[table]please set table name without prefix at first")
+        utils.exception("[table]please set table name use 'no_prefix_table' or 'no_prefix_table as alias_name'")
     end
 
-    return table
+    -- 全局的表前缀
+    local prefix = self:getSelfConfig("prefix")
+
+    -- 构造带前缀的表名
+    local _table = utils.set_back_quote(prefix .. utils.strip_back_quote(table[1]))
+
+    -- 如果并未设置别名，或者方法体参数不要求返回别名，则返回不带别名的表名称
+    if utils.empty(table[2]) or not utils.empty(without_alias) then
+        return _table
+    end
+
+    -- 存在别名，且方法体参数要求返回别名，附加别名返回
+    return _table .. " AS " .. utils.set_back_quote(utils.strip_back_quote(table[2]))
 end
 
 -- 构造where内部子句
@@ -344,8 +358,8 @@ end
 -- 内部方法，获取数据表字段新
 -- @return array
 local function autoGetFields(self)
-    -- get table
-    local table = self:getOptions("table")
+    -- get table without alias
+    local table = parseTable(self, true)
 
     -- check
     if utils.empty(table) then
@@ -960,7 +974,7 @@ function _M.find(self, pri_val)
         -- 设置主键查询
         local pri_key = self:getPrimaryField()
         if utils.empty(pri_key) then
-            utils.exception("[find]do not have primary key field in " .. self:getOptions("table"))
+            utils.exception("[find]do not have primary key field in " .. parseTable(self))
         end
 
         -- add primary key where

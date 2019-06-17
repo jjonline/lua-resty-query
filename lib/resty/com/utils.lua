@@ -404,6 +404,34 @@ local function escape_string(str)
     return str:gsub('[\\"/%z\1-\031\128-\255]', matches)
 end
 
+-- 分析 xx.yy 形式key成为两个元素的数组
+-- 分析 xx yy 形式key成为两个元素的数组
+-- 分析 xx zz yy 形式成为两个元素的数组，一般而言zz均为SQL里的as关键字
+-- @param string key
+-- @return array，若能分析出两个值则返回两个字符串，否则第二个字符串为空字符
+local function parse_key(key)
+    -- 去除可能的两端空白 后 将可能的点语法转换成空格，gsub中.为魔术字符，需要%转义
+    key = str_replace("%.", " ", trim(key))
+
+    -- 按空格或as语法截取后只处理长度为1、2、3的数组，多个自动忽略
+    local _table_array = explode('%s+', key);
+
+    -- 使用了as语法显式设置别名
+    if #_table_array >= 3 then
+        return { _table_array[1], _table_array[3] }
+    end
+
+    -- 使用了空格显式设置别名
+    if #_table_array == 2 then
+        return { _table_array[1], _table_array[2] }
+    end
+
+    -- 未显式设置别名，使用无前缀的表名作为别名
+    if #_table_array == 1 then
+        return { _table_array[1], "" }
+    end
+end
+
 -- SQL变量绑定，内部自动处理引号问题
 -- @param string sql 问号作为占位符的sql语句或sql构成部分
 -- @param array 与sql参数中问号占位符数量相同的变量数组
@@ -459,5 +487,6 @@ return {
     in_array         = in_array,
     quote_value      = quote_value,
     escape_string    = escape_string,
+    parse_key        = parse_key,
     db_bind_value    = db_bind_value,
 }
