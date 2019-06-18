@@ -100,6 +100,7 @@ db1:find(2)
 * `table('table_anme')` 不带前缀的无别名形式
 * `table('table_name table_alias_name')` 不带前缀的使用空格标识别名的形式
 * `table('table_name AS table_alias_name')` 不带前缀的使用`as`标识别名的形式
+* `table({"SELECT * FROM xx", "sub_query"})` 数组形式设置table子查询
 
 # field 方法
 
@@ -158,6 +159,41 @@ local res = db:field("id as user_id")
 	name = "晶晶",
 	user_id = 1,
 }
+````
+# alias 方法
+
+功能：设置数据表别名
+
+用法：
+
+* `alias("alias_name")` 设置当前表的别名
+
+````
+local db2 = db:name("resty_query")
+
+db2:alias("user")
+
+-- 等价于
+db:name("resty_query user") 
+-- 或
+db:name("resty_query AS user") 
+
+````
+
+````
+db:table("admin_user"):alias("user"):join("level level", "user.id = level.user_id", "LEFT")
+
+-- 构造的SQL为
+
+SELECT * FROM prefix_admin_user AS user LEFT JOIN prefix_level level ON user.id = level.user_id
+
+-- 上述写法等价于：
+
+db:table("admin_user"):alias("user"):join("level", "user.id = level.user_id", "LEFT")
+
+db:table("admin_user"):alias("user"):join("level AS level", "user.id = level.user_id", "LEFT")
+
+db:table("admin_user user"):join("level AS level", "user.id = level.user_id", "LEFT")
 ````
 
 # join 方法
@@ -403,7 +439,7 @@ db:where('id',"EXP", exp_val):select()
 
 * `group('field1')` 单个字段分组
 * `group('field1,field2')` 多个字段分组
-* `group('sum(field3)')` 支持聚合函数
+* `group({"field1","field2"})` 支持数组形式设置多个group字段
 
 
 # having 方法

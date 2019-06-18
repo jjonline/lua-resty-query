@@ -339,7 +339,7 @@ function _M.new(self, _config)
     return setmetatable(_self, mt)
 end
 
--- 设置表名称，不支持点语法设置database，仅支持空格或AS关键词
+-- 设置表名称，不支持点语法设置database，支持空格或AS关键词的字符串 或 特定格式的数组设置子查询
 -- 形式1，字符串：table|table alias|table AS alias
 -- 形式2，数组： { sub_query_sql = alias }｜ { sub_query_sql, alias }
 -- @param string|array table 不带前缀的数据表名称
