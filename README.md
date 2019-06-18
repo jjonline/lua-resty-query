@@ -53,7 +53,7 @@ local config = {
 local db = query:new(config):table("resty_query")
 
 -- 等价于
--- local db = query:new("resty_query"):setConfig(config)
+-- local db = query:name("resty_query"):setConfig(config)
 
 local res = db:where('id',1):find()
 
@@ -450,7 +450,7 @@ db:where('id',"EXP", exp_val):select()
 
 用法：
 
-* `group('field1 > 10')` 
+* `having('field1 > 10')` 
 
 # distinct 方法
 
@@ -507,7 +507,8 @@ db:where('id',"EXP", exp_val):select()
 用法：
 
 * `find()` 执行select查询1条数据，不使用任何参数形式，使用where方法设置查询条件
-* `find(pri_value)` 执行select查询1条数据，传入唯一的1个参数1个值，使用主键字段按该参数值查询
+* `find(pri_value)` 传入唯一的标量值参数，查询单个主键的表，按该参数值的去查询对应主键的记录
+* `find({pk1=va1,pk2=val2})` 数组形式的参数查询复合主键的单条记录，其中pk1、pk2为构成复合主键的字段名称，复合主键有几个就需传几个
 
 ````
 local db = require "resty.query"
@@ -519,6 +520,14 @@ db:name("user"):where("id", 1):find()
 
 -- 最终生成的sql均为：
 select * from `prefix_user` where `id`=1 limit 1
+
+-- 复合主键查询
+db:name("complex_pk"):find({pk1="val1", pk2="val2"})
+
+生成的SQL为：
+
+select * from `prefix_user` where ( `pk1`='val1' AND `pk2`='val2' ) limit 1
+-- 注意复合主键查询会显式添加括号，将多个复合主键字段的条件包裹起来
 ````
 
 # update 方法
@@ -529,6 +538,17 @@ select * from `prefix_user` where `id`=1 limit 1
 
 * `update()` 通过`data`设置要更新的键值对，通过where系列方法设置更新条件
 * `update(data)` 通过参数设置要更新的键值对，会覆盖由`data`方法设置的值
+
+````
+local db = require "resty.query"
+db:name("user"):data({name='jingjing', gender=1}):where('id',1):update()
+
+-- 等价于
+db:name("user"):where('id',1):update({name='jingjing', gender=1})
+
+生成的sql均为：
+UPDATE `prefix_user` SET `name`='jingjing',`gender`='1' WHERE `id`=1
+````
 
 # setField 方法
 
@@ -607,7 +627,26 @@ db:name("user"):where('id', 1):increment({score = 1, age = 2})
 
 * `insert()` 通过`data`设置要新增的键值对
 * `insert(data)` 通过参数设置要新增的键值对，会覆盖由`data`方法设置的值
-* `insert(data, true)` 通过第二个参数给予true，使用`REPLACE`语法执行新增，若不想通过第一个参数赋值，给予一个空数组`{}`即可
+* `insert(data, true)` 通过第二个参数给予true，使用`REPLACE`语法执行新增，若不想通过第一个参数赋值而使用data方法，则insert方法第一个参数给予一个空数组`{}`或`nil`即可
+
+````
+local db = require "resty.query"
+db:name("resty_query"):data({name='jingjing', gender=1}):insert()
+
+-- 等价于
+db:name("resty_query"):insert({name='jingjing', gender=1})
+
+生成的sql均为：
+INSERT INTO `lua_resty_query` (`name`,`gender`) VALUES ('晶晶','1')
+
+-- 还可以启用replace语法
+db:name("resty_query"):insert({name='jingjing', gender=1}, true)
+-- 或
+db:name("resty_query"):data({name='jingjing', gender=1}):insert(nil, true)
+
+生成的sql均为：
+REPLACE INTO `lua_resty_query` (`name`,`gender`) VALUES ('晶晶','1')
+````
 
 # insertAll 方法
 
@@ -640,7 +679,6 @@ db:name("user"):data(data):insertAll()
 功能：执行insert方法新增1条数据并返回新增数据的主键id
 
 说明：`insertGetId` 为insert的升级方法，insert方法返回新增数据行数，`insertGetId`执行insert数据成功后返回新增数据的主键id，参数与insert相同，仅返回值有差异。
-
 
 # delete 方法
 
@@ -778,6 +816,7 @@ local db = query:name("table")
 db:getPrimaryField()
 
 -- 返回主键字段名称，譬如 id， 若表并未设置主键字段，则返回空字符串
+-- 若表为一个复合主键表，则返回一个索引数组
 ````
 
 # reset 方法
@@ -798,7 +837,7 @@ db:getPrimaryField()
 
 * `destruct()` 显式析构，释放底层连接至连接池
 
-> 此方法为`close`方法的别名，调用任意一者即可
+> 此方法为`close`方法的别名，调用任意一者即可，不能同时调用
 
 
 # fetchSql 方法
