@@ -20,9 +20,6 @@ local mt = { __index = _M }
         '`table`.`filed5` as `filed6`',
     }
 ]]--
-local _field = {
-    field = {}, -- 记录处理好之后的字段内容
-}
 
 -- 解析单个字符串的成标准sql字段
 -- @param string string 字符串形式的字段

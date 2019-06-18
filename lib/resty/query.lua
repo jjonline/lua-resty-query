@@ -104,23 +104,77 @@ local function parseTable(self, without_alias)
     -- 获取并检测是否设置表
     local table = self:getOptions("table")
 
+    -- check empty
     if utils.empty(table) then
         utils.exception("[table]please set table name use 'no_prefix_table' or 'no_prefix_table as alias_name'")
     end
 
+    -- 子查询类型
+    if 3 == #table then
+        -- sub query use virtual table
+        if "SUB_QUERY" == table[3] then
+            return "(" .. table[1] ..") AS " .. utils.set_back_quote(utils.strip_back_quote(table[2]))
+        else
+            -- 需要扩充特定标记，在此添加
+            utils.exception("[table]unsupported table options parameters: " .. (table[3] or "nil"))
+        end
+    end
+
     -- 全局的表前缀
     local prefix = self:getSelfConfig("prefix")
-
     -- 构造带前缀的表名
     local _table = utils.set_back_quote(prefix .. utils.strip_back_quote(table[1]))
 
-    -- 如果并未设置别名，或者方法体参数不要求返回别名，则返回不带别名的表名称
-    if utils.empty(table[2]) or not utils.empty(without_alias) then
+    -- 参数强制要求无需构造别名返回
+    if not utils.empty(without_alias) then
         return _table
     end
 
+    local alias = table[2]
+    -- 如果并未设置别名，或者方法体参数不要求返回别名，则依据是否有join调度
+    if utils.empty(table[2]) then
+        -- no join condition
+        if utils.empty(self:getOptions("join")) then
+            return _table
+        end
+
+        -- in join condition and not exist alias，use table without prefix as alias
+        -- 如果查询处于join环境下，且左表未设置alias，将无前缀的表名称设置为alias
+        -- table[2] = table[1] 的语法会覆盖设置别名，此处仅判断是否join设置一个默认别名
+        alias = table[1]
+    end
+
     -- 存在别名，且方法体参数要求返回别名，附加别名返回
-    return _table .. " AS " .. utils.set_back_quote(utils.strip_back_quote(table[2]))
+    return _table .. " AS " .. utils.set_back_quote(utils.strip_back_quote(alias))
+end
+
+-- 主键字段名称构建查询条件字段，即是否自动添加别名逻辑
+-- @param string pri_key db中读取出的主键名称
+-- @return string 自动依据内部对象构建而成的可传递给where方法的字段名
+local function buildPkAsWhereField(self, pri_key)
+    local table = self:getOptions("table")
+    local join  = self:getOptions("join")
+
+    -- 未查询到table信息，且不处于join环境
+    if utils.empty(table) and utils.empty(join) then
+        return pri_key
+    end
+
+    -- join环境，需附加表别名
+    if not utils.empty(join) then
+        -- join环境，但未显示设置别名使用无前缀表名
+        if utils.empty(table[2]) then
+            return table[1] .. "." ..pri_key
+        end
+        -- 有设置别名
+        return table[2] .. "." ..pri_key
+    end
+
+    -- 正常情况，是否有别名自动
+    if utils.empty(table[2]) then
+        return pri_key
+    end
+    return table[2] .. "." ..pri_key
 end
 
 -- 构造where内部子句
@@ -179,7 +233,7 @@ local function buildWhere(this)
                 -- 保护模式执行回调函数，执行完毕sub_query对象将包含闭包条件
                 local is_ok,_ = pcall(item, sub_query)
                 if is_ok then
-                    local sub_where = logic .. " (" .. buildWhere(sub_query) .. ")" -- 闭包加入括号包裹
+                    local sub_where = logic .. " ( " .. buildWhere(sub_query) .. ")" -- 闭包加入括号包裹
                     table_insert(where_arr, sub_where)
                 else
                     utils.exception("[where]callable execute error, please use corrected method and param")
@@ -282,12 +336,22 @@ local function parseJoin(self)
         return ''
     end
 
-    local join_str = ''
+    -- 多个join的情况
+    local join_arr = {}
     for _,item in pairs(join) do
-        join_str = join_str .. item[2] .. " JOIN " .. utils.set_back_quote(item[1][1]) .. " AS " .. utils.set_back_quote(item[1][2]) .. " ON " .. item[3]
+        -- {{"table_without_prefix", "alias"}, "type", "condition"}
+
+        -- 处理完整表名称和别名
+        local join_table_full  = utils.set_back_quote(utils.strip_back_quote(self._config.prefix .. item[1][1]))
+        local join_table_alias = utils.set_back_quote(utils.strip_back_quote(item[1][2]))
+
+        -- concat
+        local join_str = item[2] .. " JOIN " .. join_table_full .. " AS " .. join_table_alias .. " ON " .. item[3]
+
+        table_insert(join_arr, join_str)
     end
 
-    return " " .. join_str .. " "
+    return " " .. utils.implode(" ", join_arr)
 end
 
 -- 内部方法：解析group分组
@@ -383,14 +447,15 @@ local function autoGetFields(self)
     local result = self.connection:fetch()
 
     -- deal structure
-    local fields = {}
+    local fields = { fields = {}, primary = {} }
     local info   = {}
     for _, val in pairs(result) do
         local _name  = val.Field
 
         -- 设置主键
         if val.Key == "PRI" then
-            fields.primary = _name
+            -- perhaps complex multi primary
+            table_insert(fields.primary, _name)
         end
 
         -- 设置每个字段详情
@@ -789,8 +854,8 @@ local function buildCount(self, field)
         local sub_query = self:clone() -- 克隆1份对象方法
         local sub_sql   = buildSelect(sub_query) -- 构造group子查询sql
 
-        -- 设置子查询成为为父查询的table表名称和表别名
-        self:setOptions("table", "(" .. sub_sql .. ") _resty_query_group_count_")
+        -- 调用table放的数组参数形式设置子查询和别名
+        self:table({ sub_sql, "_resty_query_group_count_" })
 
         -- reset group and field
         field = ""
@@ -826,7 +891,17 @@ end
 -- 生成拟执行的sql语句而不是执行
 -- @param boolean is_fetch 是否不执行sql，而是返回拟执行的sql，默认true
 function _M.fetchSql(self, is_fetch)
-    self:setOptions("fetch_sql", is_fetch or true)
+    -- nil即未设置参数或true则底层记录true
+    -- 显示false或其他等价empty情况底层记录false
+    if not utils.empty(is_fetch) or is_fetch == nil then
+        is_fetch = true
+    else
+        is_fetch = false
+    end
+
+    -- set
+    self:setOptions("fetch_sql", is_fetch)
+
     return self
 end
 
@@ -854,9 +929,22 @@ function _M.getFields(self)
 end
 
 -- 获取数据表的主键字段
--- @return string 主键字段名称，若未设置主键字段则返回空字符串
+-- @return string|array 主键字段名称，若未设置主键字段则返回空字符串，复合主键则返回数组
 function _M.getPrimaryField(self)
-    return autoGetFields(self).primary or ''
+    local primary = autoGetFields(self).primary
+
+    -- not exist primary
+    if utils.empty(primary) then
+        return ''
+    end
+
+    -- only one primary, return string
+    if 1 == #primary then
+        return primary[1]
+    end
+
+    -- complex primary key, return array
+    return primary
 end
 
 -- 执行单条数据新增
@@ -959,26 +1047,58 @@ function _M.insertAll(self, data, is_replace)
 end
 
 -- 执行单条查询，find唯一的可选参数仅支持主键查询，底层自动获取主键，传入主键值即可
--- @return string|number pri_val 可选的按主键快捷查询的主键单个值
+-- @return string|number|associative_array pri_val 可选的按主键快捷查询的主键单个值，或复合主键为key，值为value的数组
 -- @return array|nil 查找到返回一维数组，查找不到返回nil
 function _M.find(self, pri_val)
     -- 查找1条，强制覆盖limit条件为1条
     self:setOptions("limit", 1);
 
-    -- 如果有传值
+    -- 如果有传值，则当做主键查询，支持复合主键
     if not utils.empty(pri_val) then
-        if "table" == type(pri_val) then
-            utils.exception("[find]select one record use primary key auto, param need string or number")
-        end
-
         -- 设置主键查询
         local pri_key = self:getPrimaryField()
         if utils.empty(pri_key) then
             utils.exception("[find]do not have primary key field in " .. parseTable(self))
         end
 
-        -- add primary key where
-        self:where(pri_key, "=", pri_val)
+        -- add primary key
+        if "table" == type(pri_key) then
+            -- for multi complex primary key
+            if "table" ~= type(pri_val) then
+                utils.exception("[find]complex primary key find, please use {key1 = val1, key2 =val2}")
+            end
+
+            -- loop check and collect all multi primary conditions
+            local callable_complex = {}
+            for _, _pri_key in pairs(pri_key) do
+                local _pri_val = pri_val[_pri_key]
+                if nil == _pri_val then
+                    utils.exception("[find]complex primary key find, please use {key1 = val1, key2 =val2}")
+                end
+
+                -- auto build pk field
+                _pri_key = buildPkAsWhereField(self, _pri_key)
+                -- collect complex where as one array
+                callable_complex[_pri_key] = { "=", _pri_val}
+            end
+
+            -- use callable where check and set
+            if utils.empty(callable_complex) then
+                utils.exception("[find]complex primary key find, please use {key1 = val1, key2 =val2}")
+            end
+
+            -- use callable where,add brackets for all complex keys
+            self:where(function (sub_query)
+                sub_query:where(callable_complex)
+            end)
+        else
+            -- for single one primary key
+            if "table" == type(pri_val) then
+                utils.exception("[find]single primary key select auto, need scalar param")
+            end
+
+            self:where(buildPkAsWhereField(self, pri_key), "=", pri_val)
+        end
     end
 
     -- 生成查找1条的sql

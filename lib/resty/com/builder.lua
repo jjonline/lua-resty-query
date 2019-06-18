@@ -25,11 +25,12 @@ local mt = { __index = _M }
     }
 
     -- 无前缀的表名称和可能存在的表别名，不存在或未设置别名，则数组第2个元素为空字符串
-    options.table = {full_table_name, alias_name}
+    options.table = { table_name_without_prefix, alias_name }
+    -- options.table = { table_name_without_prefix, alias_name, 'SUB_QUERY' } -- 支持自子查询的特定3元素结构
 
     -- join查询内部结构
     options.join = {
-        {join_full_table_name, 'join_alias_name'},
+        {table_name_without_prefix, 'join_alias_name'},
         'LEFT|RIGHT|INNER',
         'condition'
     }
@@ -130,17 +131,31 @@ local config  = {
     pool_timeout = 10000, -- 连接池idle的超时时长，单位毫秒
 }
 
+local field_object = field:new()
+-- init 字段处理对象
+-- @param mixed field 需要分析处理的字段内容，字符串或数组
+-- @return array
+local function parseField(_field)
+    -- reset
+    field_object:reset()
+
+    -- use Field Class parse
+    field_object:set(_field)
+
+    return field_object:get(true)
+end
+
 -- 构造器内部分析处理表名称的方法
 -- @param string table_name 参数形式：no_prefix_table|no_prefix_table as table_alias
--- @return string `with_prefix_table`|`with_prefix_table` AS `table_alias`
-local parseJoinTable = function(self, table_name)
+-- @return array { table_name_without_prefix, alias}
+local parseJoinTable = function(table_name)
     -- 去除可能的两端空白 后 按空格截取后长度之可能为1、2、3的数组
     local _table_array = utils.explode('%s+', utils.trim(table_name));
 
     -- 使用了as语法显式设置别名
     if #_table_array == 3 then
         return {
-            self._config.prefix .. _table_array[1],
+            _table_array[1],
             _table_array[3]
         }
     end
@@ -148,7 +163,7 @@ local parseJoinTable = function(self, table_name)
     -- 使用了空格显式设置别名
     if #_table_array == 2 then
         return {
-            self._config.prefix .. _table_array[1],
+            _table_array[1],
             _table_array[2]
         }
     end
@@ -156,13 +171,13 @@ local parseJoinTable = function(self, table_name)
     -- 未显式设置别名，使用无前缀的表名作为别名
     if #_table_array == 1 then
         return {
-            self._config.prefix .. _table_array[1],
+            _table_array[1],
             _table_array[1]
         }
     end
 
     -- 解析出的数组长度大于3或为0，join的格式有误
-    utils.exception("[join]first param please use 'no_prefix_table' or 'no_prefix_table no_prefix_table'")
+    utils.exception("[join]please use 'no_prefix_table' or 'no_prefix_table alias' or 'no_prefix_table as alias'")
     return nil
 end
 
@@ -220,9 +235,9 @@ function _M.getSelfConfig(self, key)
     return self._config
 end
 
---- 获取builder内部构造器选项项目table
---- @param string option 可选的内部构造器选项名称
---- @return mixed
+-- 获取builder内部构造器选项项目table
+-- @param string option 可选的内部构造器选项名称
+-- @return mixed
 local function _getOptions(self, option)
     if self.options[option] ~= nil then
         return self.options[option]
@@ -233,10 +248,10 @@ local function _getOptions(self, option)
 end
 _M.getOptions = _getOptions
 
---- 设置builder内部构造器选项项目table【外部直接调用有风险，务必清楚你调用该方法的目的，内部options结构参照上方局部变量options】
---- @param string option 内部构造器选项名称
---- @param mixed  value  内部构造器值
---- @return mixed
+-- 设置builder内部构造器选项项目table【外部直接调用有风险，务必清楚你调用该方法的目的，内部options结构参照上方局部变量options】
+-- @param string option 内部构造器选项名称
+-- @param mixed  value  内部构造器值
+-- @return mixed
 local function _setOptions(self, option, value)
     -- 完整options结构数组设置
     if "table" == type(option) then
@@ -254,9 +269,10 @@ local function _setOptions(self, option, value)
 end
 _M.setOptions = _setOptions
 
---- 清理内部options设置项【外部直接调用有风险，务必清楚你调用该方法的目的，内部options结构参照上方局部变量options】
---- @param string option 可选内部构造器选项名称，不传你则清理所有
---- @return mixed
+-- 清理内部options设置项
+-- /** 外部直接调用有风险，务必清楚你调用该方法的目的，内部options结构参照上方局部变量options **/
+-- @param string option 可选内部构造器选项名称，不传你则清理所有
+-- @return mixed
 local function _removeOptions(self, option)
     -- 如果未传参option则表示清理所有内部option
     -- 如果有传参option则检查该option是否为内部的key后单独清理该1个option
@@ -280,7 +296,7 @@ local function _removeOptions(self, option)
             end
 
             -- 清理单选项field，需同时清理内部
-            if "where" == option then
+            if "field" == option then
                 self._field:reset()
             end
         end
@@ -323,9 +339,29 @@ function _M.new(self, _config)
     return setmetatable(_self, mt)
 end
 
---- 设置表名称，不支持点语法设置database，仅支持空格或AS关键词
---- @param string table 不带前缀的数据表名称 形式：table|table alias|table AS alias
+-- 设置表名称，不支持点语法设置database，仅支持空格或AS关键词
+-- 形式1，字符串：table|table alias|table AS alias
+-- 形式2，数组： { sub_query_sql = alias }｜ { sub_query_sql, alias }
+-- @param string|array table 不带前缀的数据表名称
 function _M.table(self, table)
+    -- 数组形式设置子查询和别名，避免被当做普通表名分析处理
+    -- { sub_query_sql = alias }
+    -- { sub_query_sql, alias }
+    if "table" == type(table) then
+        for key, val in pairs(table) do
+            -- { sub_query_sql, alias }
+            if "number" == type(key) and 2 == #table then
+                self.options.table = { utils.trim(table[1]), utils.trim(table[2]), 'SUB_QUERY' }
+            else
+                -- { sub_query_sql = alias }
+                self.options.table = { utils.trim(key), utils.trim(val), 'SUB_QUERY' }
+            end
+
+            return self
+        end
+    end
+
+    -- just string
     if 'string' ~= type(table) then
         -- table只支持字符串形式的参数
         utils.exception("[table]first param please use 'no_prefix_table' or 'no_prefix_table as alias_name'")
@@ -340,12 +376,32 @@ function _M.table(self, table)
     return self
 end
 
---- 设置查询表字段名称
---- @param string|array fields 需要查的表字段名称，字符串或数组
+-- 设置数据表别名，仅支持字符串参数
+-- @param string alias 表别名，仅支持单个
+function _M.alias(self, alias)
+    -- only support string format
+    if "string" ~= type(alias) then
+        utils.exception("[alias]table alias name only support string format")
+    end
+
+    -- check table setting
+    local table = self:getOptions("table")
+    if utils.empty(table) then
+        utils.exception("[alias]please set table name without prefix at first when set table alias")
+    end
+
+    -- override inside options table data
+    self.options.table[2] = alias
+
+    return self
+end
+
+-- 设置查询表字段名称
+-- @param string|array fields 需要查的表字段名称，字符串或数组
 function _M.field(self, fields)
-    --- field模块设置处理字段
+    -- field模块设置处理字段
     self._field:set(fields)
-    --- 从field模块读取出设置处理好的字段名称数组
+    -- 从field模块读取出设置处理好的字段名称数组
     self.options.field = self._field:get(true)
 
     return self
@@ -364,11 +420,11 @@ function _M.join(self, table, condition, operate, binds)
     end
 
     -- join构造的格式
-    -- {'table', 'operate', 'condition'}
+    -- { { 'table','alias' }, 'operate', 'condition'}
     local join = {}
 
     -- 解析join的表名称
-    local join_table = parseJoinTable(self, table)
+    local join_table = parseJoinTable(table)
     table_insert(join, join_table)
 
     -- 处理join操作类型：inner、left、right
@@ -614,14 +670,18 @@ function _M.page(self, page, page_size)
 end
 
 -- 设置group条件，只能调用1次，多次调用后面的将覆盖前面的
--- @param string column 需要分组的字段名，仅支持字符串
+-- @param string column 需要分组的字段名，字符串逗号分割或数组多个字段
 function _M.group(self, column)
-    -- 仅支持字符串参数
-    if 'string' == type(column) then
-        self.options.group = utils.trim(column)
-    else
-        utils.exception("[group]only one param 'column' need be type of string")
+    -- check
+    if utils.empty(column) then
+        utils.exception("[group]only one param 'column' need be type of string or index array")
     end
+
+    -- 分析后检查设置值
+    local group = parseField(column)
+
+    -- convert to string
+    self.options.group = utils.implode(",", group)
 
     return self
 end

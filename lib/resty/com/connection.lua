@@ -2,8 +2,9 @@
 --- MySQL底层Connection管理器
 ---
 
-local mysql = require "resty.mysql"
-local utils = require "resty.com.utils"
+local mysql        = require "resty.mysql"
+local utils        = require "resty.com.utils"
+local setmetatable = setmetatable
 
 local _M = {}
 local mt = { __index = _M }
