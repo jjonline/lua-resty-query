@@ -60,8 +60,8 @@ end
 
 local selectSQL    = "SELECT#DISTINCT# #FIELD# FROM #TABLE##JOIN##WHERE##GROUP##HAVING##ORDER##LIMIT##LOCK#"
 local insertSQL    = "#INSERT# INTO #TABLE# (#FIELD#) VALUES (#DATA#)"
-local updateSQL    = "UPDATE #TABLE# SET #SET##JOIN##WHERE##ORDER##LIMIT# #LOCK#"
-local deleteSQL    = "DELETE FROM #TABLE##JOIN##WHERE##ORDER##LIMIT# #LOCK#"
+local updateSQL    = "UPDATE #TABLE##JOIN# SET #SET# #WHERE# #ORDER##LIMIT# #LOCK#"
+local deleteSQL    = "DELETE#JOIN_ALIAS#FROM #TABLE##JOIN##WHERE##ORDER##LIMIT# #LOCK#"
 local insertAllSQL = "#INSERT# INTO #TABLE# (#FIELD#) VALUES #DATA#"
 
 -- 内部方法：解析是否distinct唯一
@@ -148,10 +148,29 @@ local function parseTable(self, without_alias)
     return _table .. " AS " .. utils.set_back_quote(utils.strip_back_quote(alias))
 end
 
+-- 获取表别名，未显式设置别名时使用无前缀的表名称
+-- @return string
+local function _tableAlias(self)
+    -- 获取并检测是否设置表
+    local table = self:getOptions("table")
+
+    -- check empty
+    if utils.empty(table) then
+        utils.exception("[table]please set table name use 'no_prefix_table' or 'no_prefix_table as alias_name'")
+    end
+
+    -- 如果并未设置别名返回无前缀的表
+    if utils.empty(table[2]) then
+        return table[1]
+    end
+
+    return table[2]
+end
+
 -- 主键字段名称构建查询条件字段，即是否自动添加别名逻辑
 -- @param string pri_key db中读取出的主键名称
 -- @return string 自动依据内部对象构建而成的可传递给where方法的字段名
-local function buildPkAsWhereField(self, pri_key)
+local function _buildPkAsWhereField(self, pri_key)
     local table = self:getOptions("table")
     local join  = self:getOptions("join")
 
@@ -175,6 +194,55 @@ local function buildPkAsWhereField(self, pri_key)
         return pri_key
     end
     return table[2] .. "." ..pri_key
+end
+
+-- 按主键值分析构造主键查询条件
+-- @param string|associative_array pri_val 标量值，或主键字段为key标量值为value的复合主键数组值
+local function parsePkWhere(self, pri_val)
+    -- read primary key info,if not exist primary key do not exception
+    local pri_key = self:getPrimaryField()
+    if utils.empty(pri_key) or utils.empty(pri_val) then
+        return
+    end
+
+    -- add primary key
+    if "table" == type(pri_key) then
+        -- for multi complex primary key
+        if "table" ~= type(pri_val) then
+            utils.exception("[parsePkWhere]complex primary key find, please use {key1 = val1, key2 =val2}")
+        end
+
+        -- loop check and collect all multi primary conditions
+        local callable_complex = {}
+        for _, _pri_key in pairs(pri_key) do
+            local _pri_val = pri_val[_pri_key]
+            if nil == _pri_val then
+                utils.exception("[parsePkWhere]complex primary key find, please use {key1 = val1, key2 =val2}")
+            end
+
+            -- auto build pk field
+            _pri_key = _buildPkAsWhereField(self, _pri_key)
+            -- collect complex where as one array
+            callable_complex[_pri_key] = { "=", _pri_val}
+        end
+
+        -- use callable where check and set
+        if utils.empty(callable_complex) then
+            utils.exception("[parsePkWhere]complex primary key find, please use {key1 = val1, key2 =val2}")
+        end
+
+        -- use callable where,add brackets for all complex keys
+        self:where(function (sub_query)
+            sub_query:where(callable_complex)
+        end)
+    else
+        -- for single one primary key
+        if "table" == type(pri_val) then
+            utils.exception("[parsePkWhere]single primary key select auto, need scalar param")
+        end
+
+        self:where(_buildPkAsWhereField(self, pri_key), "=", pri_val)
+    end
 end
 
 -- 构造where内部子句
@@ -339,7 +407,7 @@ local function parseJoin(self)
     -- 多个join的情况
     local join_arr = {}
     for _,item in pairs(join) do
-        -- {{"table_without_prefix", "alias"}, "type", "condition"}
+        -- {{{"table_without_prefix", "alias"}, "type", "condition"}}
 
         -- 处理完整表名称和别名
         local join_table_full  = utils.set_back_quote(utils.strip_back_quote(self._config.prefix .. item[1][1]))
@@ -822,9 +890,33 @@ local function buildDelete(self)
         utils.exception("[delete]execute delete SQL must be set where condition")
     end
 
+    -- join删除有关 https://dev.mysql.com/doc/refman/5.7/en/delete.html
+    -- 1、若join形式使用delete方法，默认构造成join的多张表记录都删除
+    -- 2、join时不支持order和limit子句
+    local join = self:getOptions("join")
+
+    -- perhaps delete join table alias
+    local join_alias = " "
+
+    -- has join statement
+    if not utils.empty(join) then
+        -- can not use ORDER BY or LIMIT in a multiple-table DELETE
+        self:removeOptions("order")
+        self:removeOptions("limit")
+
+        -- get table alias
+        join_alias = _tableAlias(self)
+        -- get all join alias
+        for _,val in pairs(join) do
+            join_alias = join_alias .. "," .. val[1][2]
+        end
+        join_alias = " " .. join_alias .. " "
+    end
+
     local sql = utils.str_replace(
             {
                 "#TABLE#",
+                '#JOIN_ALIAS#',
                 "#JOIN#",
                 "#WHERE#",
                 "#ORDER#",
@@ -833,6 +925,7 @@ local function buildDelete(self)
             },
             {
                 parseTable(self),
+                join_alias,
                 parseJoin(self),
                 parseWhere(self),
                 parseOrder(self),
@@ -1055,50 +1148,8 @@ function _M.find(self, pri_val)
 
     -- 如果有传值，则当做主键查询，支持复合主键
     if not utils.empty(pri_val) then
-        -- 设置主键查询
-        local pri_key = self:getPrimaryField()
-        if utils.empty(pri_key) then
-            utils.exception("[find]do not have primary key field in " .. parseTable(self))
-        end
-
-        -- add primary key
-        if "table" == type(pri_key) then
-            -- for multi complex primary key
-            if "table" ~= type(pri_val) then
-                utils.exception("[find]complex primary key find, please use {key1 = val1, key2 =val2}")
-            end
-
-            -- loop check and collect all multi primary conditions
-            local callable_complex = {}
-            for _, _pri_key in pairs(pri_key) do
-                local _pri_val = pri_val[_pri_key]
-                if nil == _pri_val then
-                    utils.exception("[find]complex primary key find, please use {key1 = val1, key2 =val2}")
-                end
-
-                -- auto build pk field
-                _pri_key = buildPkAsWhereField(self, _pri_key)
-                -- collect complex where as one array
-                callable_complex[_pri_key] = { "=", _pri_val}
-            end
-
-            -- use callable where check and set
-            if utils.empty(callable_complex) then
-                utils.exception("[find]complex primary key find, please use {key1 = val1, key2 =val2}")
-            end
-
-            -- use callable where,add brackets for all complex keys
-            self:where(function (sub_query)
-                sub_query:where(callable_complex)
-            end)
-        else
-            -- for single one primary key
-            if "table" == type(pri_val) then
-                utils.exception("[find]single primary key select auto, need scalar param")
-            end
-
-            self:where(buildPkAsWhereField(self, pri_key), "=", pri_val)
-        end
+        -- parse primary key where auto, support join alias
+        parsePkWhere(self, pri_val)
     end
 
     -- 生成查找1条的sql
@@ -1352,11 +1403,25 @@ function _M.decrement(self, field, step)
     return self.update(self)
 end
 
--- 执行删除操作，delete不支持通过参数设置删除条件，仅支持通过where方法设置
+-- 执行删除操作，可设置标量值参数按单个主键删除，或复合主键字段为key，标量值为value的数组值按复合主键删除
+-- 1、若join形式使用delete方法，默认构造成join的多张表记录都删除
+-- 2、join时不支持order和limit子句，底层会静默忽略设置的order和limit条件
+-- @return string|number|associative_array pri_val 可选的按主键快捷删除的主键单个值，或复合主键为key，值为value的数组
 -- @return number|nil 执行更新成功返回删除影响的行数，执行失败返回nil
-function _M.delete(self)
+function _M.delete(self, pri_val)
+    -- 如果有传值，则当做主键删除条件，支持复合主键
+    if not utils.empty(pri_val) then
+        -- parse primary key where auto, support join alias
+        parsePkWhere(self, pri_val)
+    end
+
     -- build delete SQL
     local sql = buildDelete(self)
+
+    -- not execute sql, rather than return string of SQL
+    if self:getOptions("fetch_sql") then
+        return sql
+    end
 
     -- send sql to MySQL server and execute
     self.connection:execute(sql)

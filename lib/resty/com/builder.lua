@@ -10,6 +10,7 @@ local pairs        = pairs
 local setmetatable = setmetatable
 local table_insert = table.insert
 local string_lower = string.lower
+local string_upper = string.upper
 
 local _M = {}
 local mt = { __index = _M }
@@ -30,9 +31,11 @@ local mt = { __index = _M }
 
     -- join查询内部结构
     options.join = {
-        {table_name_without_prefix, 'join_alias_name'},
-        'LEFT|RIGHT|INNER',
-        'condition'
+        {
+            {table_name_without_prefix, 'join_alias_name'},
+            'LEFT|RIGHT|INNER',
+            'condition'
+        }
     }
 
     -- where条件内部结构
@@ -428,7 +431,7 @@ function _M.join(self, table, condition, operate, binds)
     table_insert(join, join_table)
 
     -- 处理join操作类型：inner、left、right
-    operate = string_lower(operate)
+    operate = string_lower(operate or "INNER")
 
     if "left" == operate then
         table_insert(join, 'LEFT')
@@ -552,8 +555,10 @@ end
 
 -- 设置order排序字段和条件
 -- @param string|array column 需指定的排序字段名称
--- @param string sorted       排序类型，ASC|DESC，不传则默认ASC
+-- @param string sorted       排序类型，ASC|DESC，不传则默认ASC，不区分大小写
 function _M.order(self, column, sorted)
+    -- upper case
+    sorted = string_upper(sorted or "ASC")
     if not utils.in_array(sorted, {'ASC', 'DESC'}) then
         sorted = 'ASC'
     end
@@ -566,6 +571,7 @@ function _M.order(self, column, sorted)
     -- 关联数组形式多个排序
     if 'table' == type(column) then
         for k_column,v_sorted in pairs(column) do
+            k_column = string_upper(k_column or "ASC") -- upper case
             if 'string' == type(k_column) then
                 if not utils.in_array(v_sorted, {'ASC', 'DESC'}) then
                     v_sorted = 'ASC'
