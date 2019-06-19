@@ -744,6 +744,15 @@ local function buildUpdate(self)
         utils.exception("[delete]execute update SQL must be set where condition")
     end
 
+    -- has join statement
+    -- 多表update不支持order和limit ：https://dev.mysql.com/doc/refman/5.7/en/update.html
+    -- cannot use ORDER BY or LIMIT with a multiple-table UPDATE
+    local join = self:getOptions("join")
+    if not utils.empty(join) then
+        self:removeOptions("order")
+        self:removeOptions("limit")
+    end
+
     -- deal update data
     local data     = parseData(self)
     local data_set = {}

@@ -548,6 +548,18 @@ db:name("user"):where('id',1):update({name='jingjing', gender=1})
 
 生成的sql均为：
 UPDATE `prefix_user` SET `name`='jingjing',`gender`='1' WHERE `id`=1
+
+-- 支持多表关联更新
+db:alias("resty_query")
+    :join("resty_join", "resty_join.query_id=resty_query.id")
+    :data("resty_query.user_name", "join_update_username")
+    :data("resty_join.null_field", "join_update_null_field")
+    :where("resty_query.id", 10)
+    :update()
+-- 构造的sql:
+UPDATE `lua_resty_query` AS `resty_query` INNER JOIN `lua_resty_join` AS `resty_join` ON resty_join.query_id=resty_query.id SET `resty_join`.`null_field` = 'join_update_null_field' , `resty_query`.`user_name` = 'join_update_username'  WHERE `resty_query`.`id`=10
+
+-- 多表更新不支持limit和order子句，否则会报HY000错误
 ````
 
 # setField 方法
@@ -686,7 +698,41 @@ db:name("user"):data(data):insertAll()
 
 用法：
 
-* `delete()` 执行delete语句删除数据，delete方法不支持任何参数，必须通过where设置条件
+* `delete()` 执行delete语句删除数据
+* `delete(pri_key_val)` 按主键值执行删除，单主键表传标量值，多主键表使用主键字段名称为key，该字段对应的需删除的值为value构成的索引数组
+
+````
+local db = require "resty.query"
+
+-- 假设prefix_resty_query表的主键为id
+db:name("resty_query"):where("id", 1):delete()
+-- 或
+db:name("resty_query"):delete(1)
+
+-- 构造的sql均为：
+DELETE FROM `prefix_resty_query` WHERE `id`=1
+
+-- 复合主键快捷删除
+
+-- 假设lua_multi_primary表的主键字段为id,name
+db:name("resty_query"):delete({id=2,name="jing"})
+
+-- 构造的sql均为：
+DELETE FROM `lua_multi_primary` WHERE ( `id`=2 AND `name`='jing' )  LIMIT 1
+-- 注意构造的sql中的括号
+
+-- 支持join多表联合删除:
+local db = db:name("resty_query")
+db:name("resty_query")
+    :join('resty_join', "resty_join.query_id=resty_query.id")
+    :where('resty_query.id', "=", 10)
+    :delete()
+
+-- 构造的sql类似
+DELETE resty_query,resty_join FROM `lua_resty_query` AS `resty_query` INNER JOIN `lua_resty_join` AS `resty_join` ON resty_join.query_id=resty_query.id WHERE `resty_query`.`id`=10
+
+-- 多表删除不支持order和limit子句
+````
 
 # count 方法
 
