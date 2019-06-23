@@ -658,6 +658,12 @@ function _M.transaction(self, callable)
     -- create a new query with a new connection
     local query = self:newQueryWithNewConnection()
 
+    -- if self ready set table, set it in new query
+    local table = self:getOptions("table")
+    if not utils.empty(table) then
+        query:setOptions("table", table)
+    end
+
     -- beginTransaction
     query.connection:startTrans()
 
