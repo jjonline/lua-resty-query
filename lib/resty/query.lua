@@ -106,7 +106,7 @@ local function parseTable(self, without_alias)
 
     -- check empty
     if utils.empty(table) then
-        utils.exception("[table]please set table name use 'no_prefix_table' or 'no_prefix_table as alias_name'")
+        utils.exception("[table]set table name use 'no_prefix_table' or 'no_prefix_table alias' or 'no_prefix_table as alias'")
     end
 
     -- 子查询类型
@@ -156,7 +156,7 @@ local function _tableAlias(self)
 
     -- check empty
     if utils.empty(table) then
-        utils.exception("[table]please set table name use 'no_prefix_table' or 'no_prefix_table as alias_name'")
+        utils.exception("[table]set table name use 'no_prefix_table' or 'no_prefix_table alias' or 'no_prefix_table as alias'")
     end
 
     -- 如果并未设置别名返回无前缀的表

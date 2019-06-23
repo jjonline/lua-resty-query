@@ -74,16 +74,16 @@ local function _init(self, config_set)
         self:config(config_set)
     end
 
-    -- lua-resty-mysql建立实例和连接
+    -- lua-resty-mysql建立实例
     local instance, err = mysql:new()
     if not instance then
         utils.exception("[new]failed to instantiate MySQL:" .. err)
         return nil
     end
 
-    instance:set_timeout(1000) -- 3 sec
+    instance:set_timeout(1000) -- 1 sec
 
-    -- 返回初始化并建立好连接的resty.mysql对象
+    -- 返回初始化的resty.mysql对象，内部并未执行建立鉴权和连接的过程
     return instance
 end
 
@@ -351,7 +351,7 @@ function _M.commit(self)
     return true
 end
 
--- 析构方法：调用方需显示执行以和维护连接池
+-- 析构方法：调用方需显式执行以维护连接池
 -- 调用方在业务完成之后显式调用析构方法即可
 function _M.destruct(self)
     if self.state == CONNECTED then

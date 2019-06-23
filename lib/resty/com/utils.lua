@@ -404,9 +404,11 @@ local function escape_string(str)
     return str:gsub('[\\"/%z\1-\031\128-\255]', matches)
 end
 
--- 分析 xx.yy 形式key成为两个元素的数组
--- 分析 xx yy 形式key成为两个元素的数组
--- 分析 xx zz yy 形式成为两个元素的数组，一般而言zz均为SQL里的as关键字
+-- 解析表和表别名、字段和字段别名
+-- 分析 xx       形式key成为{'xx', ''}两个元素的数组
+-- 分析 xx.yy    形式key成为{'xx', 'yy'}两个元素的数组
+-- 分析 xx yy    形式key成为{'xx', 'yy'}两个元素的数组
+-- 分析 xx zz yy 形式key成为{'xx', 'yy'}两个元素的数组，一般而言zz均为SQL里的as关键字
 -- @param string key
 -- @return array，若能分析出两个值则返回两个字符串，否则第二个字符串为空字符
 local function parse_key(key)

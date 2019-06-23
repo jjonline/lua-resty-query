@@ -19,17 +19,19 @@ local mt = { __index = _M }
 --[[
     options = {}
 
-    -- 查询字段名称
+    -- 查询字段名称，已处理好的带反引号格式
     options.field = {
         'table.column1',
         'table.column2 as column3'
     }
 
     -- 无前缀的表名称和可能存在的表别名，不存在或未设置别名，则数组第2个元素为空字符串
+    -- 便于后续再次使用，均为带反引号
     options.table = { table_name_without_prefix, alias_name }
     -- options.table = { table_name_without_prefix, alias_name, 'SUB_QUERY' } -- 支持自子查询的特定3元素结构
 
     -- join查询内部结构
+    -- 下标1的数组中，表名称和别名均为带反引号，join查询限定必须使用别名形式
     options.join = {
         {
             {table_name_without_prefix, 'join_alias_name'},
@@ -39,6 +41,7 @@ local mt = { __index = _M }
     }
 
     -- where条件内部结构
+    -- 数组形式下标1的字段名称均已处理，带反引号
     options.where = {
         AND = {
             {
@@ -48,6 +51,9 @@ local mt = { __index = _M }
             },
             {
                 'whereCallBack1' -- 只有1个参数形式，回调函数执行生成where片段
+            },
+            {
+                'where exp1' -- 只有1个参数形式，字符串形式exp设置的where条件，务必留意exp设置条件处理过滤
             }
         },
         OR  = {
@@ -58,14 +64,18 @@ local mt = { __index = _M }
             },
             {
                 'whereCallBack2' -- 只有1个参数形式，回调函数执行生成where片段
+            },
+            {
+                'where exp2' -- 只有1个参数形式，字符串形式exp设置的where条件，务必留意exp设置条件处理过滤
             }
         },
     }
 
     -- 排序字段内部结构
+    -- 字段名均已处理，带反引号
     options.order = {
         {'sorted_column1', 'ASC'},
-        {'sorted_column2', 'DESC'}
+        {'table_alias.sorted_column2', 'DESC'}
     }
 
     -- limit子句内部结构
@@ -75,14 +85,14 @@ local mt = { __index = _M }
     options.page  = {0,50};
 
     -- data方法设置的key/value键值对值
+    -- 键值对中键名未处理，使用时才统一处理，便于多次调用
     options.data  = {
-        key = value,
-        key1 = {'OP', 'value1'}
+        key = value
     }
-    -- 或批量数据格式
+    -- 或批量数据格式，键名必须一一对应相同
     options.data  = {
-        {'key'  = 'value'},
-        {'key1' = 'value'},
+        {'key'  = 'value', 'key1' = 'val1'},
+        {'key'  = 'value3','key1' = 'val4'},
     }
 
     -- group子句内部结构的字段名
@@ -456,6 +466,7 @@ function _M.join(self, table, condition, operate, binds)
 end
 
 -- where构造查询条件核心方法
+-- where中查询条件字段不使用别名
 -- @param string column  字段名称
 -- @param string operate 操作符
 -- @param string|array condition 操作条件
@@ -554,6 +565,7 @@ function _M.whereExp(self, column, condition)
 end
 
 -- 设置order排序字段和条件
+-- order by中可以使用别名
 -- @param string|array column 需指定的排序字段名称
 -- @param string sorted       排序类型，ASC|DESC，不传则默认ASC，不区分大小写
 function _M.order(self, column, sorted)
@@ -595,7 +607,7 @@ function _M.data(self, column, value)
             if "number" == type(key) then
                 -- 批量数据，必须是二维数组
                 if "table" ~= type(val) then
-                    -- 下标使用了数字，又不是批量数据：一维数组设置1行数据是需使用关联数组
+                    -- 下标使用了数字，又不是批量数据：一维数组设置1行数据时需使用关联数组
                     utils.exception("[data]when use array set one row data, need associative array")
                 end
 
@@ -676,6 +688,7 @@ function _M.page(self, page, page_size)
 end
 
 -- 设置group条件，只能调用1次，多次调用后面的将覆盖前面的
+-- group by中可以使用别名
 -- @param string column 需要分组的字段名，字符串逗号分割或数组多个字段
 function _M.group(self, column)
     -- check

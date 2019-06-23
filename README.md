@@ -53,7 +53,7 @@ local config = {
 local db = query:new(config):table("resty_query")
 
 -- 等价于
--- local db = query:name("resty_query"):setConfig(config)
+-- local db = query:name("resty_query"):setSelfConfig(config)
 
 local res = db:where('id',1):find()
 
@@ -296,7 +296,7 @@ SELECT * FROM `lua_resty_query` WHERE `id`=1  LIMIT 1
 ## 比较查询(>、>=、<、<=)
 
 ````
-db:where('id',">",1:find() 
+db:where('id',">",1):find() 
 ````
 生成的SQL为：
 ````
@@ -480,7 +480,7 @@ db:where('id',"EXP", exp_val):select()
 
 * `data('id', 1)` 字段与值的设置方式，两个参数
 * `data({id = 1, name = "晶晶""})` 数组形式设置多个键值对，一个参数
-* `data({{id = 1, name = "晶晶"}})` 二维数组形式设置批量新增的数据
+* `data({{id = 1, name = "晶晶"}})` 二维数组形式设置批量新增的数据，多次调用后方会覆盖前方设置的批量数据
 
 # select 方法
 
