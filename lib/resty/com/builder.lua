@@ -420,6 +420,17 @@ function _M.field(self, fields)
     return self
 end
 
+-- 设置原生的raw查询表字段名称
+-- @param string fields 原生raw字符串，譬如：SUM(account) as acc
+function _M.fieldRaw(self, fields)
+    -- field模块设置处理字段
+    self._field:setRaw(fields)
+    -- 从field模块读取出设置处理好的字段名称数组
+    self.options.field = self._field:get(true)
+
+    return self
+end
+
 -- join查询设置
 -- @param string table     要join关联的表名称 格式1:xxx 格式2:xxx xxx1 格式3:xxx as xxx1
 -- @param string condition 关联ON后方的条件，字符串形式；若有变量拼接需求，请使用第4个参数，以防注入风险

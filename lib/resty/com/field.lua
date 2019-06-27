@@ -123,6 +123,20 @@ function _M.set(self, field)
     return self.field
 end
 
+-- 设置1个字符串原型query的字段对象
+-- @param string field 字符串raw原型
+function _M.setRaw(self, field)
+    if "string" ~= type(field) then
+        -- raw set only support string
+        utils.exception("[fieldRaw]please use string in raw field mode")
+    end
+
+    -- add to array
+    table_insert(self.field, utils.trim(field))
+
+    return self.field
+end
+
 -- 获取1个query使用的字段对象
 -- @param boolean is_array 调试用参数，true返回table false或不传返回字符串
 function _M.get(self, is_array)

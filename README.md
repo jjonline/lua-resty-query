@@ -160,6 +160,29 @@ local res = db:field("id as user_id")
 	user_id = 1,
 }
 ````
+
+# fieldRaw 方法
+
+功能：设置特殊操作的字段，譬如使用SQL函数
+
+用法：
+
+* `fieldRaw('SUM(aactount) as acc')` 方法体只支持字符串形式，`raw`形式设置‘字段’
+
+````
+local db2 = db:name("resty_query as user")
+local where = {}
+    
+where["user.id"] = {"in", "1,2,3"}
+where["age"] = {"between", {0,11}}
+    
+local where_res = db2:fiedl("id"):fieldRaw('SUM(score) as sc'):where(where):select()
+
+-- 构造的sql类似：
+SELECT `id`,SUM(score) as sc FROM `lua_resty_query` AS `user` WHERE (`age` BETWEEN '0' AND '11') AND `user`.`id` IN ('1','2','3')
+
+````
+
 # alias 方法
 
 功能：设置数据表别名
