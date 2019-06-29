@@ -176,7 +176,7 @@ local where = {}
 where["user.id"] = {"in", "1,2,3"}
 where["age"] = {"between", {0,11}}
     
-local where_res = db2:fiedl("id"):fieldRaw('SUM(score) as sc'):where(where):select()
+local where_res = db2:field("id"):fieldRaw('SUM(score) as sc'):where(where):select()
 
 -- 构造的sql类似：
 SELECT `id`,SUM(score) as sc FROM `lua_resty_query` AS `user` WHERE (`age` BETWEEN '0' AND '11') AND `user`.`id` IN ('1','2','3')
@@ -759,12 +759,88 @@ DELETE resty_query,resty_join FROM `lua_resty_query` AS `resty_query` INNER JOIN
 
 # count 方法
 
-功能：获取查询语句的结果集总数
+功能：获取查询语句的结果集总数，返回数字
 
 用法：
 
 * `count()` 获取查询语句执行后的结果总数
 * `count(field)` 按`field`字段查询结果集总数
+
+# max 方法
+
+功能：max函数查询字段最大值
+
+用法：
+
+* `max(field)` 查询field字段的数字最大值
+* `max(field, false)` 最大值不是一个数值时使用第二个参数false
+
+````
+local db = require "resty.query"
+
+local max = db:max("id", false)
+
+-- 构造的sql类似
+SELECT MAX(`id`) AS `resty_query_max` FROM `lua_resty_query` LIMIT 1
+````
+> max方法仅支持字段本身的计算，若有复杂的max计算，使用fieldRaw方法，配合select或find实现
+
+# min 方法
+
+功能：min函数查询字段最小值
+
+用法：
+
+* `min(field)` 查询field字段的数字最小值
+* `min(field, false)` 最小值不是一个数值时使用第二个参数false
+
+````
+local db = require "resty.query"
+
+local max = db:min("id", false)
+
+-- 构造的sql类似
+SELECT MIN(`id`) AS `resty_query_max` FROM `lua_resty_query` LIMIT 1
+````
+> min方法仅支持字段本身的计算，若有复杂的min计算，使用fieldRaw方法，配合select或find实现
+
+# avg 方法
+
+功能：avg函数查询字段平均值，返回数字
+
+用法：
+
+* `avg(field)` 查询field字段的数字平均值
+
+````
+local db = require "resty.query"
+
+local max = db:avg("id", false)
+
+-- 构造的sql类似
+SELECT AVG(`id`) AS `resty_query_max` FROM `lua_resty_query` LIMIT 1
+````
+
+> avg方法仅支持字段本身的计算，若有复杂的avg计算，使用fieldRaw方法，配合select或find实现
+
+# sum 方法
+
+功能：sum函数查询字段累加值，返回数字
+
+用法：
+
+* `sum(field)` 查询field字段的数字累加值
+
+````
+local db = require "resty.query"
+
+local max = db:sum("id", false)
+
+-- 构造的sql类似
+SELECT SUM(`id`) AS `resty_query_max` FROM `lua_resty_query` LIMIT 1
+````
+
+> sum方法仅支持字段本身的计算，若有复杂的sum计算，使用fieldRaw方法，配合select或find实现
 
 # transaction 方法
 
