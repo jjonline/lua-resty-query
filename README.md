@@ -778,7 +778,7 @@ DELETE resty_query,resty_join FROM `lua_resty_query` AS `resty_query` INNER JOIN
 ````
 local db = require "resty.query"
 
-local max = db:max("id", false)
+local max = db:max("id")
 
 -- 构造的sql类似
 SELECT MAX(`id`) AS `resty_query_max` FROM `lua_resty_query` LIMIT 1
@@ -797,7 +797,7 @@ SELECT MAX(`id`) AS `resty_query_max` FROM `lua_resty_query` LIMIT 1
 ````
 local db = require "resty.query"
 
-local max = db:min("id", false)
+local max = db:min("id")
 
 -- 构造的sql类似
 SELECT MIN(`id`) AS `resty_query_max` FROM `lua_resty_query` LIMIT 1
@@ -815,7 +815,7 @@ SELECT MIN(`id`) AS `resty_query_max` FROM `lua_resty_query` LIMIT 1
 ````
 local db = require "resty.query"
 
-local max = db:avg("id", false)
+local max = db:avg("id")
 
 -- 构造的sql类似
 SELECT AVG(`id`) AS `resty_query_max` FROM `lua_resty_query` LIMIT 1
@@ -834,7 +834,7 @@ SELECT AVG(`id`) AS `resty_query_max` FROM `lua_resty_query` LIMIT 1
 ````
 local db = require "resty.query"
 
-local max = db:sum("id", false)
+local max = db:sum("id")
 
 -- 构造的sql类似
 SELECT SUM(`id`) AS `resty_query_max` FROM `lua_resty_query` LIMIT 1
