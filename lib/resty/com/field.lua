@@ -118,7 +118,7 @@ function _M.set(self, field)
         table_insert(self.field, v)
     end
 
-     -- 去重返回所有已设置的字段
+    -- 去重返回所有已设置的字段数组
     self.field = utils.unique(self.field)
     return self.field
 end
@@ -134,6 +134,8 @@ function _M.setRaw(self, field)
     -- add to array
     table_insert(self.field, utils.trim(field))
 
+    -- 去重返回所有已设置的字段数组
+    self.field = utils.unique(self.field)
     return self.field
 end
 

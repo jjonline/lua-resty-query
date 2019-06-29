@@ -412,10 +412,8 @@ end
 -- 设置查询表字段名称
 -- @param string|array fields 需要查的表字段名称，字符串或数组
 function _M.field(self, fields)
-    -- field模块设置处理字段
-    self._field:set(fields)
-    -- 从field模块读取出设置处理好的字段名称数组
-    self.options.field = self._field:get(true)
+    -- field模块设置处理字段后返回已处理好的字段数组列表
+    self.options.field = self._field:set(fields)
 
     return self
 end
@@ -423,10 +421,8 @@ end
 -- 设置原生的raw查询表字段名称
 -- @param string fields 原生raw字符串，譬如：SUM(account) as acc
 function _M.fieldRaw(self, fields)
-    -- field模块设置处理字段
-    self._field:setRaw(fields)
-    -- 从field模块读取出设置处理好的字段名称数组
-    self.options.field = self._field:get(true)
+    -- field模块设置处理字段后返回已处理好的字段数组列表
+    self.options.field = self._field:setRaw(fields)
 
     return self
 end
