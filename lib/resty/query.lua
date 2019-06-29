@@ -1168,7 +1168,7 @@ end
 function _M.insertAll(self, data, is_replace)
     -- set multi data
     if not utils.empty(data) then
-        sel:data(data)
+        self:data(data)
     end
 
     -- build insert sql
@@ -1475,7 +1475,7 @@ function _M.avg(self, field)
         utils.exception("[avg]field use 'filed_name' or 'table.filed_name' or 'table.filed_name as alias'")
     end
 
-    -- build min sql
+    -- build avg sql
     local sql = buildAggregate(self, "avg", field)
 
     -- not execute sql, rather than return string of SQL
