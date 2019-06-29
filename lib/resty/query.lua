@@ -37,6 +37,8 @@ local tonumber     = tonumber
 local table_insert = table.insert
 local string_sub   = string.sub
 local string_len   = string.len
+local string_upper = string.upper
+local string_lower = string.lower
 local setmetatable = setmetatable
 local getmetatable = getmetatable
 local utils        = require "resty.com.utils"
@@ -990,8 +992,46 @@ local function buildCount(self, field)
     -- set limit param 1
     self:limit(1)
 
-    -- set count field
-    self:setOptions("field", {count_field})
+    -- set count raw field
+    self:fieldRaw(count_field)
+
+    return buildSelect(self)
+end
+
+-- 构建aggregate聚合查询的sql语句
+-- @param string aggregate aggregate聚合查询类型枚举值：sum、max、min、avg
+-- @param string field     aggregate聚合查询的字段名称
+-- @param string
+function buildAggregate(self, aggregate, field)
+    -- distinct support
+    local distinct = ''
+    if self:getOptions("distinct") then
+        distinct = 'DISTINCT '
+    end
+
+    -- only one result
+    self:setOptions("limit", 1)
+
+    -- remove other field set
+    self:removeOptions("field")
+
+    -- aggregate field alias name
+    local alias = "resty_query_" .. string_lower(aggregate)
+
+    -- aggregate function name
+    aggregate = string_upper(aggregate)
+
+    -- parse simple field
+    if "string" == type(field) then
+        local aggregate_field
+        aggregate_field = utils.set_back_quote(utils.strip_back_quote(field))
+        aggregate_field = aggregate .. "(" .. distinct .. aggregate_field .. ") AS `" .. alias .. "`"
+
+        -- set aggregate raw field
+        self:fieldRaw(aggregate_field)
+    else
+        utils.exception("[" .. string_lower(aggregate) .. "]only support simple string field name in aggregate")
+    end
 
     return buildSelect(self)
 end
@@ -1287,9 +1327,9 @@ function _M.paginate(self, page, page_size, is_complex)
     return result
 end
 
--- count查询总数
+-- count查询总数，底层自动支持group子句
 -- @param string field 需要计数的字段，可选参数，留空则count总行数
--- @return number 返回大等于0的整数
+-- @return number 返回大于等于0的整数
 function _M.count(self, field)
     -- build count select sql, support group sql statement
     local sql = buildCount(self, field)
@@ -1313,6 +1353,150 @@ function _M.count(self, field)
 
     -- convert to number
     return tonumber(result[1]["resty_query_count"] or 0)
+end
+
+-- sum查询
+-- @param string field 需要sum的字段
+-- @return number 返回大于等于0的整数
+function _M.sum(self, field)
+    -- check field
+    if utils.empty(field) then
+        utils.exception("[sum]field use 'filed_name' or 'table.filed_name' or 'table.filed_name as alias'")
+    end
+
+    -- build sum sql
+    local sql = buildAggregate(self, "sum", field)
+
+    -- not execute sql, rather than return string of SQL
+    if self:getOptions("fetch_sql") then
+        return sql
+    end
+
+    -- send single or multi sql to MySQL server and execute
+    self.connection:query(sql)
+
+    -- fetch one result
+    local result = self.connection:fetch()
+
+    -- remove all setOptions
+    self:removeOptions()
+
+    -- record last SQL
+    set_last_sql(sql)
+
+    -- convert to number
+    return tonumber(result[1]["resty_query_sum"] or 0)
+end
+
+-- max查询
+-- @param string  field     需要max的字段
+-- @param boolean is_number max的值是否为数字，默认当做数字处理，不当数字处理传值false
+-- @return number|string    返回大于等于0的整数或字符串值
+function _M.max(self, field, is_number)
+    -- check field
+    if utils.empty(field) then
+        utils.exception("[max]field use 'filed_name' or 'table.filed_name' or 'table.filed_name as alias'")
+    end
+
+    -- build max sql
+    local sql = buildAggregate(self, "max", field)
+
+    -- not execute sql, rather than return string of SQL
+    if self:getOptions("fetch_sql") then
+        return sql
+    end
+
+    -- send single or multi sql to MySQL server and execute
+    self.connection:query(sql)
+
+    -- fetch one result
+    local result = self.connection:fetch()
+
+    -- remove all setOptions
+    self:removeOptions()
+
+    -- record last SQL
+    set_last_sql(sql)
+
+    -- do not convert
+    if false == is_number then
+        return result[1]["resty_query_max"] or 0
+    end
+
+    -- convert to number
+    return tonumber(result[1]["resty_query_max"] or 0)
+end
+
+-- min查询
+-- @param string  field     需要min的字段
+-- @param boolean is_number min的值是否为数字，默认当做数字处理，不当数字处理传值false
+-- @return number|string    返回大等于0的整数或字符串值
+function _M.min(self, field, is_number)
+    -- check field
+    if utils.empty(field) then
+        utils.exception("[min]field use 'filed_name' or 'table.filed_name' or 'table.filed_name as alias'")
+    end
+
+    -- build min sql
+    local sql = buildAggregate(self, "min", field)
+
+    -- not execute sql, rather than return string of SQL
+    if self:getOptions("fetch_sql") then
+        return sql
+    end
+
+    -- send single or multi sql to MySQL server and execute
+    self.connection:query(sql)
+
+    -- fetch one result
+    local result = self.connection:fetch()
+
+    -- remove all setOptions
+    self:removeOptions()
+
+    -- record last SQL
+    set_last_sql(sql)
+
+    -- do not convert
+    if false == is_number then
+        return result[1]["resty_query_min"] or 0
+    end
+
+    -- convert to number
+    return tonumber(result[1]["resty_query_min"] or 0)
+end
+
+-- avg查询
+-- @param string field 需要avg的字段
+-- @return number 返回大于等于0的整数
+function _M.avg(self, field)
+    -- check field
+    if utils.empty(field) then
+        utils.exception("[avg]field use 'filed_name' or 'table.filed_name' or 'table.filed_name as alias'")
+    end
+
+    -- build min sql
+    local sql = buildAggregate(self, "avg", field)
+
+    -- not execute sql, rather than return string of SQL
+    if self:getOptions("fetch_sql") then
+        return sql
+    end
+
+    -- send single or multi sql to MySQL server and execute
+    self.connection:query(sql)
+
+    -- fetch one result
+    local result = self.connection:fetch()
+
+    -- remove all setOptions
+    self:removeOptions()
+
+    -- record last SQL
+    set_last_sql(sql)
+
+    -- convert to number
+    return tonumber(result[1]["resty_query_avg"] or 0)
 end
 
 -- 执行更新操作
