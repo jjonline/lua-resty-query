@@ -1562,14 +1562,14 @@ function _M.increment(self, field, step)
     -- set data
     if "table" == type(field) then
         for column,bump in pairs(field) do
-            if "string" ~= type(column) or "number" ~= type(bump) then
+            if "string" ~= type(column) then
                 utils.exception("[increment]increment multi field first param need associative array")
             end
             bump = bump or 1
-            self:data(column, {"INC", bump})
+            self:data(column, {"INC", tonumber(bump)})
         end
     else
-        self:data(field, {"INC", step})
+        self:data(field, {"INC", tonumber(step)})
     end
 
     return self.update(self)
@@ -1589,14 +1589,14 @@ function _M.decrement(self, field, step)
     -- set data
     if "table" == type(field) then
         for column,bump in pairs(field) do
-            if "string" ~= type(column) or "number" ~= type(bump) then
+            if "string" ~= type(column) then
                 utils.exception("[increment]increment multi field first param need associative array")
             end
             bump = bump or 1
-            self:data(column, {"DEC", bump})
+            self:data(column, {"DEC", tonumber(bump)})
         end
     else
-        self:data(field, {"DEC", step})
+        self:data(field, {"DEC", tonumber(step)})
     end
 
     return self.update(self)
